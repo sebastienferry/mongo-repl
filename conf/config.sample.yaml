@@ -1,0 +1,43 @@
+# Define the logging policy
+# level are panic, fatal, error, warn, info, debug
+# If you want, you can override this configuration using the environment variable LOG_LEVEL
+logging:
+  level: info
+
+# Define the replication
+repl:
+  
+  # Mongo source et target configuration
+  # Eventually, you can override those using environment variables
+  # SOURCE and TARGET
+  source: 
+  target: 
+
+  # Define the database to replicate
+  databases:
+    - Db1
+
+  # Filter the collections to include or exclude.
+  # If both are defined, the filter_in will have the priority.
+  filters:
+    in:
+      - collection1
+      - collection2
+    out:
+      - collection3
+
+  # Full replication configuration
+  full:
+  
+    # Batch size for replication
+    batch: 1000
+
+    # Option to try an update in case of duplicate key
+    update_on_duplicate: false
+
+  # Incremental replication configuration
+  incr:
+    # Define where to store the replication state for the oplog
+    state:
+      db: Db1
+      collection: _repl

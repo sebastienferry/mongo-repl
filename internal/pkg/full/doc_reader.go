@@ -1,0 +1,152 @@
+package full
+
+import (
+	"context"
+
+	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+type DocumentReader struct {
+	// The database name
+	Database string
+	// The name of the collection
+	Collection string
+	// The batch size
+	Batch int
+	// The source database
+	Source *mong.Mong
+	// The document writer
+	Writer *DocumentWriter
+	// Progression state
+	Progress *SyncProgress
+}
+
+const (
+	MAX_BUFFER_BYTE_SIZE = 12 * 1024 * 1024
+)
+
+func NewDocumentReader(database string, collection string, source *mong.Mong, batch int, writer *DocumentWriter) *DocumentReader {
+	return &DocumentReader{
+		Database:   database,
+		Collection: collection,
+		Batch:      batch,
+		Source:     source,
+		Writer:     writer,
+	}
+}
+
+// Read a batch of documents from the source
+func (r *DocumentReader) StartSync(ctx context.Context) error {
+
+	log.Info("---- Start syncing collection ", r.Collection, " ----")
+
+	// get total count
+	var res struct {
+		Count       int64   `bson:"count"`
+		Size        float64 `bson:"size"`
+		StorageSize float64 `bson:"storageSize"`
+	}
+
+	if err := r.Source.Client.Database(r.Database).RunCommand(nil,
+		bson.D{{"collStats", r.Collection}}).Decode(&res); err != nil {
+		log.Error("Error getting collection stats: ", err)
+		return err
+	}
+
+	count := uint64(res.Count)
+	r.Progress.SetTotal(count)
+	log.InfoWithFields("Collection stats", log.Fields{
+		"collection": r.Collection,
+		"count":      count})
+
+	findOptions := new(options.FindOptions)
+	findOptions.SetSort(map[string]interface{}{
+		"_id": 1,
+	})
+	findOptions.SetBatchSize(int32(r.Batch))
+	findOptions.SetHint(map[string]interface{}{
+		"_id": 1,
+	})
+
+	// Filter the documents
+	filter := bson.D{{}}
+	//filter = append(filter, bson.D{"_id", bson.D{{"$gt", r.lastId}}})
+
+	// Read the documents
+	db := r.Source.Client.Database(r.Database)
+	cur, err := db.Collection(r.Collection).Find(ctx, filter, findOptions)
+	if err != nil {
+		return err
+	}
+
+	limit := NewQpsLimit(30000)
+	limit.Reset()
+
+	// Prepare a buffer to store documents to sync
+	bufferSize := 128
+	buffer := make([]*bson.Raw, 0, 128)
+	bufferByteSize := 0
+
+	for cur.Next(ctx) {
+
+		if err := cur.Err(); err != nil {
+			log.Error("Error reading document: ", err)
+			cur.Close(ctx)
+			return err
+		}
+
+		// Get the raw document
+		raw := cur.Current
+		if raw == nil {
+			log.Error("Error reading document: ", err)
+			cur.Close(ctx)
+		}
+
+		// Wait for the QPS limit
+		limit.Wait()
+
+		// Doc received
+		count := len(buffer)
+		limit.Incr(count)
+
+		// Successfully read a batch of documents. Increment the counter
+		metrics.FullSyncReadCounter.WithLabelValues(r.Database, r.Collection).Inc()
+
+		if bufferByteSize+len(raw) > MAX_BUFFER_BYTE_SIZE || len(buffer) >= bufferSize {
+
+			// Send the buffer to the target
+			// TODO: At the moment, I am not sure if I should use a channel to sync between the reader and the writer
+			log.Debug("Sending buffer to target")
+			if err := r.Writer.WriteDocuments(buffer); err != nil {
+				log.Error("Error syncing documents: ", err)
+				return err
+			}
+
+			// Reset the buffer
+			buffer = make([]*bson.Raw, 0, bufferSize)
+			bufferByteSize = 0
+		}
+
+		buffer = append(buffer, &raw)
+		bufferByteSize += len(raw)
+	}
+
+	// Send the remaining buffer
+	if len(buffer) > 0 {
+		log.Debug("Sending remaining buffer to target")
+		if err := r.Writer.WriteDocuments(buffer); err != nil {
+			log.Error("Error syncing documents: ", err)
+		}
+	}
+
+	return nil
+}
+
+// Set the total count of documents to sync
+func (r *DocumentReader) SetProgress(progress *SyncProgress) {
+	r.Progress = progress
+}

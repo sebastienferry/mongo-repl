@@ -19,7 +19,7 @@ var (
 	FullSyncWriteCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "mongo_repl_full_sync_documents_write_total",
 		Help: "The total number of documents written during a full sync",
-	}, []string{"database", "collection"})
+	}, []string{"database", "collection", "operation"})
 
 	FullSyncErrorTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "mongo_repl_full_sync_documents_error_total",

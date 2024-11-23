@@ -6,6 +6,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -78,4 +79,16 @@ func unwrap(err error) error {
 		return nil
 	}
 	return u.Unwrap()
+}
+
+func ExtractId(doc bson.Raw) primitive.E {
+	var data bson.D
+	if err := bson.Unmarshal(doc, &data); err == nil {
+		for _, bsonE := range data {
+			if bsonE.Key == "_id" {
+				return bsonE
+			}
+		}
+	}
+	return primitive.E{}
 }

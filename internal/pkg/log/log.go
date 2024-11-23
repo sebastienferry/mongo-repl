@@ -11,30 +11,30 @@ import (
 var logger = logrus.New()
 
 const (
-	PanicLevel = logrus.PanicLevel // 0
-	FatalLevel = logrus.FatalLevel // 1
-	ErrorLevel = logrus.ErrorLevel // 2
-	WarnLevel  = logrus.WarnLevel  // 3
-	InfoLevel  = logrus.InfoLevel  // 4
-	DebugLevel = logrus.DebugLevel // 5
+	PANIC = logrus.PanicLevel // 0
+	FATAL = logrus.FatalLevel // 1
+	ERROR = logrus.ErrorLevel // 2
+	WARN  = logrus.WarnLevel  // 3
+	INFO  = logrus.InfoLevel  // 4
+	DEBUG = logrus.DebugLevel // 5
 )
 
 const (
-	PanicRunes = "panic"
-	FatalRunes = "fatal"
-	ErrorRunes = "error"
-	WarnRunes  = "warn"
-	InfoRunes  = "info"
-	DebugRunes = "debug"
+	PanicLevel = "panic"
+	FatalLevel = "fatal"
+	ErrorLevel = "error"
+	WarnLevel  = "warn"
+	InfoLevel  = "info"
+	DebugLevel = "debug"
 )
 
 var LogLevels = map[string]logrus.Level{
-	PanicRunes: PanicLevel,
-	FatalRunes: FatalLevel,
-	ErrorRunes: ErrorLevel,
-	WarnRunes:  WarnLevel,
-	InfoRunes:  InfoLevel,
-	DebugRunes: DebugLevel,
+	PanicLevel: PANIC,
+	FatalLevel: FATAL,
+	ErrorLevel: ERROR,
+	WarnLevel:  WARN,
+	InfoLevel:  INFO,
+	DebugLevel: DEBUG,
 }
 
 func FromString(level string) logrus.Level {

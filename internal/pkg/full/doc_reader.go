@@ -42,7 +42,7 @@ func NewDocumentReader(database string, collection string, source *mong.Mong, ba
 // Read a batch of documents from the source
 func (r *DocumentReader) StartSync(ctx context.Context) error {
 
-	log.Info("---- Start syncing collection ", r.Collection, " ----")
+	log.Info("Start syncing collection ", r.Collection)
 
 	// get total count
 	var res struct {
@@ -120,11 +120,14 @@ func (r *DocumentReader) StartSync(ctx context.Context) error {
 
 			// Send the buffer to the target
 			// TODO: At the moment, I am not sure if I should use a channel to sync between the reader and the writer
-			log.Debug("Sending buffer to target")
-			if err := r.Writer.WriteDocuments(buffer); err != nil {
+			result, err := r.Writer.WriteDocuments(buffer)
+			if err != nil {
 				log.Error("Error syncing documents: ", err)
 				return err
 			}
+
+			// Update metrics
+			r.ReportResult(result)
 
 			// Reset the buffer
 			buffer = make([]*bson.Raw, 0, bufferSize)
@@ -137,13 +140,29 @@ func (r *DocumentReader) StartSync(ctx context.Context) error {
 
 	// Send the remaining buffer
 	if len(buffer) > 0 {
-		log.Debug("Sending remaining buffer to target")
-		if err := r.Writer.WriteDocuments(buffer); err != nil {
+		result, err := r.Writer.WriteDocuments(buffer)
+		if err != nil {
 			log.Error("Error syncing documents: ", err)
 		}
+
+		// Update metrics
+		r.ReportResult(result)
 	}
 
+	log.Info("End syncing collection ", r.Collection)
+
 	return nil
+}
+
+// Report the result of the write operation
+func (r *DocumentReader) ReportResult(result WriteResult) {
+	// TODO : Should we reflect the success rate or the progress ?
+	r.Progress.Increment(result.InsertedCount + result.UpdatedCount + result.SkippedOnDuplicateCount + result.ErrorCount)
+	metrics.FullSyncWriteCounter.WithLabelValues(r.Database, r.Collection, "insert").Add(float64(result.InsertedCount))
+	metrics.FullSyncWriteCounter.WithLabelValues(r.Database, r.Collection, "update").Add(float64(result.UpdatedCount))
+	metrics.FullSyncErrorTotal.WithLabelValues(r.Database, r.Collection, "skip").Add(float64(result.SkippedOnDuplicateCount))
+	metrics.FullSyncErrorTotal.WithLabelValues(r.Database, r.Collection, "bulk").Add(float64(result.ErrorCount))
+	metrics.FullSyncProgressGauge.WithLabelValues(r.Database, r.Collection).Set(r.Progress.Progress())
 }
 
 // Set the total count of documents to sync

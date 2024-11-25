@@ -3,7 +3,6 @@ package incr
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
@@ -48,13 +47,23 @@ func (ow *OplogWriter) StartWriter() {
 			// Get the write operation
 			//updates = append(updates, ow.getWriteOperation(l))
 
+			// Handle the operation
+			var opErr error = nil
 			switch l.Operation {
 			case "i":
-				handleInsert(l)
+				opErr = ow.handleInsert(l)
 			case "u":
-				ow.handleUpdate(l, true)
+				opErr = ow.handleUpdate(l, true)
 			case "d":
-				handleDelete(l)
+				opErr = ow.handleDelete(l)
+			}
+
+			// Check for errors
+			if opErr != nil {
+				log.ErrorWithFields("Error handling operation", log.Fields{
+					"err": opErr,
+					"op":  l.Operation,
+				})
 			}
 
 			// if len(updates) > 10 {
@@ -75,9 +84,128 @@ func (ow *OplogWriter) StartWriter() {
 	}()
 }
 
-func handleInsert(log *ChangeLog) {
-	// Insert the document
+func (ow *OplogWriter) handleInsert(l *ChangeLog) error {
 
+	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+
+	// var upserts []*OplogRecord
+
+	//for _, log := range oplogs {
+	if _, err := collectionHandle.InsertOne(context.Background(), l.ParsedLog.Object); err != nil {
+
+		if mongo.IsDuplicateKeyError(err) {
+
+			// Handle upsert
+			err = ow.handleUpdateOnInsert(l, true)
+			return err
+		} else {
+			log.ErrorWithFields("Insert error", log.Fields{"err": err})
+			return err
+		}
+	}
+
+	//LOG.Debug("single_writer: insert %v", log.original.partialLog)
+	//
+
+	// if len(upserts) != 0 {
+	// 	RecordDuplicatedOplog(sw.conn, collection, upserts)
+
+	// 	// update on duplicated key occur
+	// 	if dupUpdate {
+	// 		LOG.Info("Duplicated document found. reinsert or update to [%s] [%s]", database, collection)
+	// 		return sw.doUpdateOnInsert(database, collection, metadata, upserts, conf.Options.IncrSyncExecutorUpsert)
+	// 	}
+	// 	return nil
+	// }
+	return nil
+
+}
+
+func (sw *OplogWriter) handleUpdateOnInsert(l *ChangeLog, upsert bool) error {
+
+	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+
+	// type pair struct {
+	// 	id    interface{}
+	// 	data  bson.D
+	// 	index int
+	// }
+	// var updates []*pair
+	// for i, log := range oplogs {
+	var update interface{} = bson.D{{"$set", l.ParsedLog.Object}}
+	var id primitive.D
+
+	if upsert && len(l.ParsedLog.DocumentKey) > 0 {
+		//updates = append(updates, &pair{id: l.ParsedLog.DocumentKey, data: newObject, index: i})
+		id = l.ParsedLog.DocumentKey
+	} else {
+		// if upsert {
+		// 	LOG.Warn("doUpdateOnInsert runs upsert but lack documentKey: %v", l.ParsedLog)
+		// }
+		// insert must have _id
+		if id := GetKey(l.ParsedLog.Object, ""); id != nil {
+			//updates = append(updates, &pair{id: bson.D{{"_id", id}}, data: newObject, index: i})
+			//update = bson.D{{"$set", newObject}}
+			id = bson.D{{"_id", id}}
+		} else {
+			return fmt.Errorf("insert on duplicated update _id look up failed. %v", l.ParsedLog)
+		}
+	}
+
+	//LOG.Debug("single_writer: updateOnInsert %v", l.ParsedLog)
+	//}
+
+	if upsert {
+		//for _, update := range updates {
+
+		opts := options.Update().SetUpsert(true)
+		res, err := collectionHandle.UpdateOne(context.Background(), id, update, opts)
+		if err != nil {
+			log.Warn("upsert _id[%v] with data[%v] meets err[%v] res[%v], try to solve",
+				id, update, err, res)
+
+			// error can be ignored(insert fail & oplog is before full end)
+			if mongo.IsDuplicateKeyError(err) &&
+				checkpoint.ToInt64(l.ParsedLog.Timestamp) <= sw.fullFinishTs {
+				return nil
+			}
+
+			log.Error("upsert _id[%v] with data[%v] failed[%v]", id, update, err)
+			return err
+		}
+		if res != nil {
+			if res.MatchedCount != 1 && res.UpsertedCount != 1 {
+				return fmt.Errorf("Update fail(MatchedCount:%d ModifiedCount:%d UpsertedCount:%d) upsert _id[%v] with data[%v]",
+					res.MatchedCount, res.ModifiedCount, res.UpsertedCount, id, update)
+			}
+		}
+		//}
+	} else {
+		//for i, update := range updates {
+
+		res, err := collectionHandle.UpdateOne(context.Background(), id, update, nil)
+		if err != nil && mongo.IsDuplicateKeyError(err) == false {
+			log.Warn("update _id[%v] with data[%v] meets err[%v] res[%v], try to solve", id, update, err, res)
+
+			// error can be ignored
+			if IgnoreError(err, "u",
+				checkpoint.ToInt64(l.ParsedLog.Timestamp) <= sw.fullFinishTs) {
+				return nil
+			}
+
+			log.Error("update _id[%v] with data[%v] failed[%v]", id, update, err.Error())
+			return err
+		}
+		if res != nil {
+			if res.MatchedCount != 1 {
+				return fmt.Errorf("Update fail(MatchedCount:%d, ModifiedCount:%d) old-data[%v] with new-data[%v]",
+					res.MatchedCount, res.ModifiedCount, id, update)
+			}
+		}
+		//}
+	}
+
+	return nil
 }
 
 // Update the document
@@ -185,186 +313,10 @@ func (ow *OplogWriter) handleUpdate(l *ChangeLog, upsert bool) error {
 	return nil
 }
 
-func handleDelete(log *ChangeLog) {
+func (ow *OplogWriter) handleDelete(log *ChangeLog) error {
 	// Delete the document
+	return nil
 }
-
-func FindFiledPrefix(input bson.D, prefix string) bool {
-	for id := range input {
-		if strings.HasPrefix(input[id].Key, prefix) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// pay attention: the input bson.D will be modified.
-func RemoveFiled(input bson.D, key string) bson.D {
-	flag := -1
-	for id := range input {
-		if input[id].Key == key {
-			flag = id
-			break
-		}
-	}
-
-	if flag != -1 {
-		input = append(input[:flag], input[flag+1:]...)
-	}
-	return input
-}
-
-// "o" : { "$v" : 2, "diff" : { "d" : { "count" : false }, "u" : { "name" : "orange" }, "i" : { "c" : 11 } } }
-func DiffUpdateOplogToNormal(updateObj bson.D) (interface{}, error) {
-
-	diffObj := GetKey(updateObj, "diff")
-	if diffObj == nil {
-		return updateObj, fmt.Errorf("don't have diff field updateObj:[%v]", updateObj)
-	}
-
-	bsonDiffObj, ok := diffObj.(bson.D)
-	if !ok {
-		return updateObj, fmt.Errorf("diff field is not bson.D updateObj:[%v]", updateObj)
-	}
-
-	result, err := BuildUpdateDelteOplog("", bsonDiffObj)
-	if err != nil {
-		return updateObj, fmt.Errorf("parse diffOplog failed updateObj:[%v] err[%v]", updateObj, err)
-	}
-
-	return result, nil
-
-}
-
-func GetKey(log bson.D, wanted string) interface{} {
-	ret, _ := GetKeyWithIndex(log, wanted)
-	return ret
-}
-
-func GetKeyWithIndex(log bson.D, wanted string) (interface{}, int) {
-	if wanted == "" {
-		wanted = "_id"
-	}
-
-	// "_id" is always the first field
-	for id, ele := range log {
-		if ele.Key == wanted {
-			return ele.Value, id
-		}
-	}
-
-	return nil, 0
-}
-
-func BuildUpdateDelteOplog(prefixField string, obj bson.D) (interface{}, error) {
-	var result bson.D
-
-	for _, ele := range obj {
-		if ele.Key == "d" {
-			result = append(result, primitive.E{
-				Key:   "$unset",
-				Value: combinePrefixField(prefixField, ele.Value)})
-
-		} else if ele.Key == "i" || ele.Key == "u" {
-			result = append(result, primitive.E{
-				Key:   "$set",
-				Value: combinePrefixField(prefixField, ele.Value)})
-
-		} else if len(ele.Key) > 1 && ele.Key[0] == 's' {
-			// s means subgroup field(array or nest)
-			tmpPrefixField := ""
-			if len(prefixField) == 0 {
-				tmpPrefixField = ele.Key[1:]
-			} else {
-				tmpPrefixField = prefixField + "." + ele.Key[1:]
-			}
-
-			nestObj, err := BuildUpdateDelteOplog(tmpPrefixField, ele.Value.(bson.D))
-			if err != nil {
-				return obj, fmt.Errorf("parse ele[%v] failed, updateObj:[%v]", ele, obj)
-			}
-			if _, ok := nestObj.(mongo.Pipeline); ok {
-				return nestObj, nil
-			} else if _, ok := nestObj.(bson.D); ok {
-				for _, nestObjEle := range nestObj.(bson.D) {
-					result = append(result, nestObjEle)
-				}
-			} else {
-				return obj, fmt.Errorf("unknown nest type ele[%v] updateObj:[%v] nestObj[%v]", ele, obj, nestObj)
-			}
-
-		} else if len(ele.Key) > 1 && ele.Key[0] == 'u' {
-			result = append(result, primitive.E{
-				Key: "$set",
-				Value: bson.D{
-					primitive.E{
-						Key:   prefixField + "." + ele.Key[1:],
-						Value: ele.Value,
-					},
-				},
-			})
-
-		} else if ele.Key == "l" {
-			if len(result) != 0 {
-				return obj, fmt.Errorf("len should be 0, Key[%v] updateObj:[%v], result:[%v]",
-					ele, obj, result)
-			}
-
-			return mongo.Pipeline{
-				{{"$set", bson.D{
-					{prefixField, bson.D{
-						{"$slice", []interface{}{"$" + prefixField, ele.Value}},
-					}},
-				}}},
-			}, nil
-
-		} else if ele.Key == "a" && ele.Value == true {
-			continue
-		} else {
-			return obj, fmt.Errorf("unknow Key[%v] updateObj:[%v]", ele, obj)
-		}
-	}
-
-	return result, nil
-}
-
-func combinePrefixField(prefixField string, obj interface{}) interface{} {
-	if len(prefixField) == 0 {
-		return obj
-	}
-
-	tmpObj, ok := obj.(bson.D)
-	if !ok {
-		return obj
-	}
-
-	var result bson.D
-	for _, ele := range tmpObj {
-		result = append(result, primitive.E{
-			Key:   prefixField + "." + ele.Key,
-			Value: ele.Value})
-	}
-
-	return result
-}
-
-// func (ow *OplogWriter) getWriteOperation(log *ParsedLog) mongo.WriteModel {
-
-// 	switch log.Operation {
-// 	case "i":
-// 		if len(log.DocumentKey) > 0 {
-// 			// update
-// 			return mongo.NewUpdateOneModel().SetFilter(log.DocumentKey).SetUpdate(log.Object)
-// 		} else {
-// 			// insert
-// 			return mongo.NewInsertOneModel().SetDocument(log.Object)
-// 		}
-// 	case "u":
-// 	case "d":
-// 	}
-// 	return nil
-// }
 
 // true means error can be ignored
 // https://github.com/mongodb/mongo/blob/master/src/mongo/base/error_codes.yml
@@ -412,17 +364,6 @@ func IgnoreError(err error, op string, isFullSyncStage bool) bool {
 	return false
 }
 
-func GetObjectId(log bson.D) (primitive.ObjectID, error) {
-	for _, bsonE := range log {
-		if bsonE.Key == "_id" {
-			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
-				return oid, nil
-			}
-		}
-	}
-	return primitive.ObjectID{}, fmt.Errorf("No ObjectID found")
-}
-
 func debugLog(l *ParsedLog) {
 	// Try to get the object id
 	id, _ := GetObjectId(l.Object)
@@ -433,6 +374,3 @@ func debugLog(l *ParsedLog) {
 		"id": id,
 	})
 }
-
-//opts := options.BulkWrite().SetOrdered(false)
-//res, err := mong.Registry.GetTarget().Client.Database("DeliveryCache").Collection(collection).BulkWrite(nil, models, opts)

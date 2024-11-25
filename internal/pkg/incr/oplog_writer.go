@@ -41,8 +41,19 @@ func (ow *OplogWriter) StartWriter() {
 		// var startTime = time.Now()
 		for l := range ow.queuedLogs {
 
+			if l.Version != 2 {
+				log.Warn("Unknown version of OPLog: %v", l)
+				continue
+			}
+
+			// Try to get the object id
+			id, _ := GetObjectId(l.Object)
+			if id.IsZero() && len(l.Query) > 0 {
+				id = GetKey(l.Query, "_id").(primitive.ObjectID)
+			}
+
 			// Display some debug information
-			debugLog(&l.ParsedLog)
+			debugLog(id, &l.ParsedLog)
 
 			// Get the write operation
 			//updates = append(updates, ow.getWriteOperation(l))
@@ -133,7 +144,7 @@ func (sw *OplogWriter) handleUpdateOnInsert(l *ChangeLog, upsert bool) error {
 	// var updates []*pair
 	// for i, log := range oplogs {
 	var update interface{} = bson.D{{"$set", l.ParsedLog.Object}}
-	var id primitive.D
+	var id interface{}
 
 	if upsert && len(l.ParsedLog.DocumentKey) > 0 {
 		//updates = append(updates, &pair{id: l.ParsedLog.DocumentKey, data: newObject, index: i})
@@ -143,7 +154,8 @@ func (sw *OplogWriter) handleUpdateOnInsert(l *ChangeLog, upsert bool) error {
 		// 	LOG.Warn("doUpdateOnInsert runs upsert but lack documentKey: %v", l.ParsedLog)
 		// }
 		// insert must have _id
-		if id := GetKey(l.ParsedLog.Object, ""); id != nil {
+		id = GetKey(l.ParsedLog.Object, "")
+		if id != nil {
 			//updates = append(updates, &pair{id: bson.D{{"_id", id}}, data: newObject, index: i})
 			//update = bson.D{{"$set", newObject}}
 			id = bson.D{{"_id", id}}
@@ -313,8 +325,16 @@ func (ow *OplogWriter) handleUpdate(l *ChangeLog, upsert bool) error {
 	return nil
 }
 
-func (ow *OplogWriter) handleDelete(log *ChangeLog) error {
-	// Delete the document
+func (ow *OplogWriter) handleDelete(l *ChangeLog) error {
+
+	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	_, err := collectionHandle.DeleteOne(context.Background(), l.ParsedLog.Object)
+	if err != nil {
+		//	LOG.Error("delete data[%v] failed[%v]", log.original.partialLog.Query, err)
+		return err
+	}
+
+	// LOG.Debug("single_writer: delete %v", log.original.partialLog)
 	return nil
 }
 
@@ -364,9 +384,7 @@ func IgnoreError(err error, op string, isFullSyncStage bool) bool {
 	return false
 }
 
-func debugLog(l *ParsedLog) {
-	// Try to get the object id
-	id, _ := GetObjectId(l.Object)
+func debugLog(id primitive.ObjectID, l *ParsedLog) {
 	log.DebugWithFields("OPLOG entry: ", log.Fields{
 		"ns": l.Namespace,
 		"op": l.Operation,

@@ -30,7 +30,8 @@ type ReplConfig struct {
 	Target string `json:"Target" yaml:"target"`
 
 	// The list of databases to replicate
-	Databases []string `yaml:"databases"`
+	Databases   []string        `yaml:"databases"`
+	DatabasesIn map[string]bool `yaml:"-"`
 
 	// Collection whitelist/blacklist
 	Filters    map[string][]string `yaml:"filters"`
@@ -98,6 +99,12 @@ func (c *AppConfig) LoadConfig() error {
 		c.Repl.Target = os.Getenv("TARGET")
 	}
 
+	// Databases to replicate
+	c.Repl.DatabasesIn = make(map[string]bool)
+	for _, db := range c.Repl.Databases {
+		c.Repl.DatabasesIn[db] = true
+	}
+
 	// Initialize the filters
 	c.Repl.FiltersIn = make(map[string]bool)
 	for _, filter := range c.Repl.Filters["in"] {
@@ -114,8 +121,8 @@ func (c *AppConfig) LoadConfig() error {
 
 func (c *AppConfig) LogConfig() {
 	log.Info("MongoDB configuration:")
-	log.Info("- Source: ", obfuscateCrendentials(c.Repl.Source))
-	log.Info("- Target: ", obfuscateCrendentials(c.Repl.Target))
+	log.Info("- Source: ", ObfuscateCrendentials(c.Repl.Source))
+	log.Info("- Target: ", ObfuscateCrendentials(c.Repl.Target))
 	log.Info("Databases to replicate:")
 	for _, db := range c.Repl.Databases {
 		log.Info("- ", db)
@@ -125,7 +132,7 @@ func (c *AppConfig) LogConfig() {
 // Considering the following structure for MongoDB connection string:
 // "mongodb://<username>:<password>@<host>:<port>"
 // The following function will replaces the username and password with "****"
-func obfuscateCrendentials(mongoConnectionString string) string {
+func ObfuscateCrendentials(mongoConnectionString string) string {
 	// Find the username and password
 	regexp := regexp.MustCompile(`mongodb:\/\/(.*):(.*)@`)
 	matches := regexp.FindStringSubmatch(mongoConnectionString)

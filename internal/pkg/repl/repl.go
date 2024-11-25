@@ -3,7 +3,10 @@ package repl
 import (
 	"context"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/full"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/incr"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 )
 
@@ -13,36 +16,54 @@ const (
 	IncrementalRepl = 2
 )
 
+var (
+	ReplicationTypes = map[int]string{
+		UnknownRepl:     "Unknown",
+		FullRepl:        "Full",
+		IncrementalRepl: "Incremental",
+	}
+)
+
 func StartReplication(ctx context.Context) {
+
 	log.Info("Starting replication")
-	replType := getReplType(context.Background())
+	checkpointManager := checkpoint.NewMongoCheckpointService(
+		config.Current.Repl.Incr.State.Database, config.Current.Repl.Incr.State.Collection)
+
+	// Determine the replication type
+	ckpt, err := checkpointManager.GetCheckpoint(ctx)
+	if err != nil {
+		log.Fatal("Error getting the checkpoint: ", err)
+	}
+
+	var replType int = getReplType(ckpt)
+	log.Info("Replication type: ", ReplicationTypes[replType])
 
 	// Start the replication based on the type
 	switch replType {
 	case FullRepl:
 		log.Info("Starting full replication")
-		full.StartFullReplication(ctx)
+		full.StartFullReplication(ctx, checkpointManager)
 	case IncrementalRepl:
 		log.Info("Starting incremental replication")
-		StartIncrementalReplication(ctx)
+		incr.StartIncrementalReplication(ctx, checkpointManager)
 	default:
 		log.Fatal("Unknown replication type")
 	}
 
-	log.Info("Replication type: ", replType)
 }
 
 // Check the replication state to determine if
 // a full document replication is needed of if we can proceed
 // with the incremental replication based on the oplog.
-func getReplType(ctx context.Context) int {
+func getReplType(ckpt checkpoint.Checkpoint) int {
 	// Check the replication state
 	log.Info("Checking replication state")
 
 	// We start with an unknown replication state
 	foundReplType := UnknownRepl
 
-	var lastLsnSync int64 = GetLastLsnSynched(ctx)
+	var lastLsnSync int64 = ckpt.LatestTimestamp
 	if lastLsnSync == 0 {
 		log.Info("No previous replication state found")
 		foundReplType = FullRepl

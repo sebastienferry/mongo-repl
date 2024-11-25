@@ -3,6 +3,7 @@ package mong
 import (
 	"context"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -24,7 +25,7 @@ func NewMongo(connectUri string) *Mong {
 		log.Fatal("Error connecting to the server: ", err)
 	}
 
-	log.Info("Successfully connected to the server", connectUri)
+	log.Info("Successfully connected to the server", config.ObfuscateCrendentials(connectUri))
 
 	mongo := &Mong{
 		Client: c,

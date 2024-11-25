@@ -149,7 +149,10 @@ func (r *DocumentReader) StartSync(ctx context.Context) error {
 		r.ReportResult(result)
 	}
 
-	log.Info("End syncing collection ", r.Collection)
+	log.InfoWithFields("Finished full replication for collection", log.Fields{
+		"database":   r.Database,
+		"collection": r.Collection,
+	})
 
 	return nil
 }

@@ -1,0 +1,207 @@
+package incr
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
+)
+
+var (
+	FilteredOperations = map[string]bool{
+		"n":  true, // no-op
+		"c":  true, // command
+		"db": true, // database
+
+		// Keep the following operations
+		"u": false, // update
+		"d": false, // delete
+		"i": false, // insert
+	}
+)
+
+type GenericOplog struct {
+	Raw    []byte
+	Parsed *ChangeLog
+}
+
+type ChangeLog struct {
+	ParsedLog
+
+	// /*
+	//  * Every field subsequent declared is NEVER persistent or
+	//  * transfer on network connection. They only be parsed from
+	//  * respective logic
+	//  */
+	// UniqueIndexesUpdates bson.M // generate by CollisionMatrix
+	// RawSize              int    // generate by Decorator
+	// SourceId             int    // generate by Validator
+
+	// for update operation, the update condition
+	Db         string
+	Collection string
+}
+
+type ParsedLog struct {
+	Timestamp     primitive.Timestamp `bson:"ts" json:"ts"`
+	Term          *int64              `bson:"t" json:"t"`
+	Hash          *int64              `bson:"h" json:"h"`
+	Version       int                 `bson:"v" json:"v"`
+	Operation     string              `bson:"op" json:"op"`
+	Gid           string              `bson:"g,omitempty" json:"g,omitempty"`
+	Namespace     string              `bson:"ns" json:"ns"`
+	Object        bson.D              `bson:"o" json:"o"`
+	Query         bson.D              `bson:"o2" json:"o2"`                                       // update condition
+	UniqueIndexes bson.M              `bson:"uk,omitempty" json:"uk,omitempty"`                   //
+	LSID          bson.Raw            `bson:"lsid,omitempty" json:"lsid,omitempty"`               // mark the session id, used in transaction
+	FromMigrate   bool                `bson:"fromMigrate,omitempty" json:"fromMigrate,omitempty"` // move chunk
+	TxnNumber     *int64              `bson:"txnNumber,omitempty" json:"txnNumber,omitempty"`     // transaction number in session
+	DocumentKey   bson.D              `bson:"documentKey,omitempty" json:"documentKey,omitempty"` // exists when source collection is sharded, only including shard key and _id
+	PrevOpTime    bson.Raw            `bson:"prevOpTime,omitempty"`
+	UI            *primitive.Binary   `bson:"ui,omitempty" json:"ui,omitempty"` // do not enable currently
+}
+
+type GenericObject struct {
+	// The object id
+	Id primitive.ObjectID `bson:"_id" json:"_id omitempty"`
+}
+
+type OplogReader struct {
+	startingCkpt checkpoint.Checkpoint
+}
+
+func NewOplogReader(startingCkpt checkpoint.Checkpoint) *OplogReader {
+	return &OplogReader{
+		startingCkpt: startingCkpt,
+	}
+}
+
+func (o *OplogReader) StartReader() error {
+
+	findOptions := options.Find()
+	findOptions.SetBatchSize(int32(8192))
+	findOptions.SetNoCursorTimeout(true)
+	findOptions.SetCursorType(options.Tailable)
+	//findOptions.SetSort(bson.D{{"$natural", 1}})
+
+	startingTimestamp := o.startingCkpt.LatestTimestamp
+
+	//TODO : We probably need to ensure the checkpoint is within the oplog range
+
+	latestTs := checkpoint.FromInt64(startingTimestamp)
+
+	// Prepare the query
+	filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
+
+	// Get the oplog cursor
+	oplog, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+	if err != nil {
+		log.Error("Error getting oplog cursor: ", err)
+
+		// TODO: Sleep ?
+	}
+
+	queuedLogs := make(chan *ChangeLog, 1000)
+	writer := NewOplogWriter(startingTimestamp, queuedLogs)
+	writer.StartWriter()
+
+	for {
+		if oplog.Next(context.Background()) {
+
+			if err := oplog.Err(); err != nil {
+				log.Error("Error getting next oplog entry: ", err)
+				// Release the cursor
+				oplog.Close(context.Background())
+				// Wait a bit
+				time.Sleep(1 * time.Second)
+				continue
+			}
+
+			// Handle the OPLOG entry
+			// MongoShake send this to a channel and use a pool of workers to process the oplog entries
+			// For now, we will process the oplog entry in the same goroutine
+
+			var bytes []byte = oplog.Current
+
+			// Deserialize the oplog entry
+			l := ParsedLog{}
+
+			err := bson.Unmarshal(bytes, &l)
+			if err != nil {
+				log.Error("Error unmarshalling oplog entry: ", err)
+				continue
+			}
+
+			// Filter unwanted data
+			db, coll := GetDbAndCollection(l.Namespace)
+			if !shouldReplicate(db, coll) {
+				continue
+			}
+
+			// // Try to get the object id
+			// var id primitive.ObjectID
+			// if config.Current.Logging.Level == log.DebugLevel {
+			// 	for _, bsonE := range l.Object {
+			// 		if bsonE.Key == "_id" {
+			// 			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
+			// 				id = oid
+			// 			}
+			// 		}
+			// 	}
+			// }
+
+			// log.DebugWithFields("OPLOG entry: ", log.Fields{
+			// 	"ns": l.Namespace,
+			// 	"op": l.Operation,
+			// 	"ts": l.Timestamp,
+			// 	"id": id,
+			// })
+
+			// Process the oplog entry
+			queuedLogs <- &ChangeLog{
+				ParsedLog:  l,
+				Db:         db,
+				Collection: coll,
+			}
+		}
+	}
+}
+
+func shouldReplicate(db string, collection string) bool {
+
+	// Check if the database is part of the one we are targeting
+	if ok := config.Current.Repl.DatabasesIn[db]; !ok {
+		return false
+	}
+
+	if len(config.Current.Repl.FiltersIn) > 0 {
+		if _, ok := config.Current.Repl.FiltersIn[collection]; !ok {
+			return false
+		}
+		return true
+	} else if config.Current.Repl.FiltersOut[collection] {
+		return false
+	}
+	return true
+}
+
+// Split the namespace to get the database name
+// namespace = "database.collection.bla"
+// parts = ["database", "collection.bla"]
+func GetDbAndCollection(namespace string) (string, string) {
+	var parts []string = []string{namespace}
+	sep := strings.Index(namespace, ".")
+	if sep > 0 {
+		parts = []string{namespace[:sep], namespace[sep+1:]}
+	}
+	var db string = parts[0]
+	var coll string = parts[1]
+	return db, coll
+}

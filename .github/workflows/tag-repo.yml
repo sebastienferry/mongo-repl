@@ -1,13 +1,13 @@
 # This is a reusable workflow that builds a Go project.
 name: tag-repo
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
       tag-name: # Main source target
         required: true
         type: string
-    secrets:
-      - GITHUB_TOKEN
+      secrets:
+        - GITHUB_TOKEN
 
 jobs:
   build:

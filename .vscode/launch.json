@@ -12,7 +12,7 @@
             "program": "${workspaceFolder}/cmd/repl/main.go",
             "envFile": "${workspaceFolder}/conf/.env",
             "env": {
-                "CONFIG_FILE_PATH": "${workspaceFolder}/conf/config.sample.yaml"
+                "CONFIG_FILE_PATH": "${workspaceFolder}/conf/config.dev.yaml"
             },
         }
     ]

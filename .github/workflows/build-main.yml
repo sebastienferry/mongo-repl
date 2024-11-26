@@ -19,7 +19,7 @@ jobs:
     with:
       main-src: "./cmd/repl/main.go"
 
-  tag-repo:    
+  tag-repo:
     needs: build-main
     uses: ./.github/workflows/tag-repo.yml
     with:

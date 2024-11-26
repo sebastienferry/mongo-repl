@@ -2,15 +2,6 @@
 name: tag-repo
 on:
   workflow_dispatch:
-    inputs:
-      tag-name:
-        description: 'The name of the tag to create'
-        required: true
-        type: string
-  workflow_call:
-    inputs:
-      tag-name:
-        type: string
 
 jobs:
   build:
@@ -21,8 +12,9 @@ jobs:
 
       - name: generate-tag
         id: generate-tag
+        # Generate tag name from workflow incremental run number
         run: |
-          TAG_NAME="${{ inputs.tag-name }}"
+          TAG_NAME="$GITHUB_RUN_NUMBER"
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
 
       - name: tag-repo

@@ -10,14 +10,13 @@ on:
 
 jobs:
   build-main:
-    if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
+    if: github.event.push.branch == 'main' || (github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main')
     uses: ./.github/workflows/build-go-project.yml
     with:
       main-src: "./cmd/repl/main.go"
 
   tag-repo:    
     needs: build-main
-    if: success() && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     uses: ./.github/workflows/tag-repo.yml
     with:
       tag-name: ${{ needs.build.outputs.tag-name }}

@@ -3,10 +3,15 @@ name: tag-repo
 on:
   workflow_dispatch:
     inputs:
-      tag-name: # Main source target
+      tag-name:
         description: 'The name of the tag to create'
         required: true
         type: string
+  workflow_call:
+    inputs:
+      tag-name:
+        type: string
+    from: build-main
 
 jobs:
   build:

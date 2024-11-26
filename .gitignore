@@ -28,7 +28,12 @@ go.work
 .env
 conf/*.yaml
 !conf/config.sample.yaml
+
+# Ignore macOS system files
 .DS_Store
-.vscode/launch.json
-.vscode/launch.json
-.vscode/launch.json
+
+# Ignore Visual Studio Code settings
+.vscode/*
+
+# Ignore Go binary files
+__debug_bin*

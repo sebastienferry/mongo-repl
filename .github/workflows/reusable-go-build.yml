@@ -1,5 +1,5 @@
 # This is a reusable workflow that builds a Go project.
-name: reuseable-go-build
+name: reusable-go-build
 on:
   workflow_call:
     inputs:

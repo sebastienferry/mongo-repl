@@ -24,12 +24,7 @@ jobs:
         uses: docker/build-push-action@v2
         with:
           context: .
+          platforms: linux/amd64,linux/arm64,osx/arm64
           push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/mongo-repl:${{ github.ref_name }}
-
-      - name: build-and-push-image-ghcr
-        uses: docker/build-push-action@v2
-        with:
-          context: .
-          push: true
+          #tags: ${{ secrets.DOCKER_USERNAME }}/mongo-repl:${{ github.ref_name }}
           tags: ghcr.io/${{ secrets.GHCR_USERNAME }}/mongo-repl:${{ github.ref_name }}

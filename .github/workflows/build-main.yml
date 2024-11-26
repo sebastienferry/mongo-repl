@@ -1,10 +1,10 @@
-name: build-main-branch
+name: build-main
 
 on:
   pull_request:
     types: [closed]  # Trigger only on PR close events
   workflow_run:
-    workflows: [Build Feature Branch]
+    workflows: [build-branch]
     types:
       - completed
 

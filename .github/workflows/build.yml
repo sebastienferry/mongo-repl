@@ -13,6 +13,6 @@ permissions:
 
 jobs:
   build-main:
-    uses: ./.github/workflows/reusable/build-go-project.yml
+    uses: ./.github/workflows/reusable-go-build.yml
     with:
       main-src: "./cmd/repl/main.go"

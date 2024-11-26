@@ -14,6 +14,6 @@ jobs:
   tag-repo:
     # Optional condition to run the job
     if: ${{ github.event.inputs.version != '' }} # Ensures version input is provided
-    uses: ./.github/workflows/reusable/tag-repo.yml
+    uses: ./.github/workflows/reusable-tag-repo.yml
     with:
       version: ${{ github.event.inputs.version }}

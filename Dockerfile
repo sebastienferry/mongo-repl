@@ -7,7 +7,7 @@ ARG TARGETARCH
 RUN go mod download
 RUN GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -o /out/repl /src/cmd/repl/main.go
 
-FROM alpine
+FROM --platform=$BUILDPLATFORM golang
 WORKDIR /app
 COPY --from=builder /out/repl .
 CMD ["/app/repl"]

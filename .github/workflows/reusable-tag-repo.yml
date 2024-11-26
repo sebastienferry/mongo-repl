@@ -35,7 +35,9 @@ jobs:
         
       - name: tag-repo
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use a dedicated PAT token to be able to retrigger a workflow
+          # See : https://github.com/orgs/community/discussions/27028
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_PAT }}
         run: |
           git config user.name "GitHub Actions"
           git config user.email "github-actions[bot]@users.noreply.github.com"

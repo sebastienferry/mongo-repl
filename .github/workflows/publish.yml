@@ -2,10 +2,10 @@ name: publish
 on:
   push:
     tags:
-      - '*'
-
+      - 'v*.*.*'
+  workflow_dispatch:
+    
 jobs:
-  
   publish-image:
     runs-on: ubuntu-latest
     steps:

@@ -1,9 +1,11 @@
 name: build-main
 on:
-  # Run this workflow only for commits to the main branch or when a PR is merged to the main branch
+  # Run this workflow only for commits to the main branch
+  # Will be removed !!
   push:
     branches:
-      - "*" # Run this workflow for all branches
+      - main 
+
   pull_request:
     branches:
       - main

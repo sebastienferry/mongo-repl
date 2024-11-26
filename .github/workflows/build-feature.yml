@@ -1,0 +1,12 @@
+name: build-feature
+on:
+  # Run this workflow only for commits to the main branch or when a PR is merged to the main branch
+  push:
+    branches:
+      - "feature/*" # Run this workflow for all branches starting with "feature/"
+  
+jobs:
+  build-main:
+    uses: ./.github/workflows/reusable-go-build.yml
+    with:
+      main-src: "./cmd/repl/main.go"

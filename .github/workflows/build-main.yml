@@ -11,33 +11,13 @@ on:
 jobs:
   build:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
-    uses: ./.github/workflows/reusable-workflow.yml
+    uses: ./.github/workflows/build-go-project.yml
     with:
       main-src: "./cmd/repl/main.go"
 
   tag-repo:
     needs: build
     if: success()
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Generate tag
-        id: generate-tag
-        run: |
-          TAG_NAME="v$(date +%Y%m%d).${{ github.run_number }}"
-          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
-
-      - name: Create Git tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "GitHub Actions"
-          git config user.email "github-actions@users.noreply.github.com"
-          git tag $TAG_NAME
-          git push origin $TAG_NAME
-
-      - name: Output created tag
-        run: echo "Tag $TAG_NAME has been created."
+    uses: ./.github/workflows/tag-repo.yml
+    with:
+      tag-name: ${{ needs.build.outputs.tag-name }}

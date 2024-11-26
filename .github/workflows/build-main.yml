@@ -1,4 +1,4 @@
-name: Build Main and Enable Tagging
+name: build-main-branch
 
 on:
   pull_request:

@@ -1,5 +1,5 @@
 # This is a reusable workflow that builds a Go project.
-name: tag-repo
+name: reusable-tag-repo
 on:
   workflow_call:
     inputs:

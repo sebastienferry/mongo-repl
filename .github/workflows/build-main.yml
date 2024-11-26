@@ -16,7 +16,7 @@ jobs:
       main-src: "./cmd/repl/main.go"
 
   tag-repo:    
-    needs: build
+    needs: build-main
     if: success() && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     uses: ./.github/workflows/tag-repo.yml
     with:

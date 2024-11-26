@@ -1,5 +1,4 @@
 name: build-main
-
 on:
   pull_request:
     types: [closed]  # Trigger only on PR close events
@@ -22,5 +21,3 @@ jobs:
   tag-repo:
     needs: build-main
     uses: ./.github/workflows/tag-repo.yml
-    with:
-      tag-name: ${{ needs.build.outputs.tag-name }}

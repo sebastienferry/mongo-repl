@@ -1,7 +1,6 @@
 # This is a reusable workflow that builds a Go project.
 name: tag-repo
 on:
-  workflow_call:
   workflow_dispatch:
   
 jobs:

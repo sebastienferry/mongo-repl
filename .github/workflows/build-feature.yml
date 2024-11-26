@@ -15,13 +15,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20  # Set your Go version here
-      
-      - name: List files
-        run: ls
+          go-version: 1.22  # Set your Go version here
       
       - name: Install dependencies
-        run: go get .
+        run: go mod download
       
       - name: Build project
         run: go build ./cmd/repl/main.go

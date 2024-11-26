@@ -1,0 +1,19 @@
+name: release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        description: 'Version to tag the repository with'
+        required: true
+        
+permissions:
+  contents: write
+
+jobs:
+  tag-repo:
+    # Optional condition to run the job
+    if: ${{ github.event.inputs.version != '' }} # Ensures version input is provided
+    uses: ./.github/workflows/reusable/tag-repo.yml
+    with:
+      version: ${{ github.event.inputs.version }}

@@ -9,7 +9,7 @@ on:
       - completed
 
 jobs:
-  build:
+  build-main:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     uses: ./.github/workflows/build-go-project.yml
     with:

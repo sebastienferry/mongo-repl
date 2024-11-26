@@ -6,7 +6,7 @@ on:
       - "*"
 
 jobs:
-  build:
-    uses: ./.github/workflows/reusable-workflow.yml
+  build-branch:
+    uses: ./.github/workflows/build-go-project.yml
     with:
       main-src: "./cmd/repl/main.go"

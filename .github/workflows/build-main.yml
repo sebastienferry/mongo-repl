@@ -8,6 +8,9 @@ on:
     types:
       - completed
 
+permissions:
+  contents: write
+
 jobs:
   build-main:
     # Run this job only for commits to the main branch or when a PR is merged to the main branch

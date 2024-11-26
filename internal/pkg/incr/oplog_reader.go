@@ -15,6 +15,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+const (
+	CursorWaitTime = 5 * time.Second
+)
+
 var (
 	FilteredOperations = map[string]bool{
 		"n":  true, // no-op
@@ -105,22 +109,10 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 	findOptions := options.Find()
 	findOptions.SetBatchSize(int32(8192))
-	findOptions.SetNoCursorTimeout(true)
-	findOptions.SetCursorType(options.Tailable)
+	//findOptions.SetNoCursorTimeout(true)
+	//findOptions.SetCursorType(options.Tailable)
 	//findOptions.SetSort(bson.D{{"$natural", 1}})
-
 	latestTs := checkpoint.FromInt64(startingTimestamp.LatestLSN)
-
-	// Prepare the query
-	filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
-
-	// Get the oplog cursor
-	oplog, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
-	if err != nil {
-		log.Error("Error getting oplog cursor: ", err)
-
-		// TODO: Sleep ?
-	}
 
 	queuedLogs := make(chan *ChangeLog, 1000)
 	writer := NewOplogWriter(startingTimestamp.LatestLSN, queuedLogs, o.ckptManager)
@@ -137,7 +129,16 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 			default:
 			}
 
-			if oplog.Next(context.Background()) {
+			// Get the oplog cursor
+			filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
+			oplog, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+			if err != nil {
+				log.Error("Error getting oplog cursor: ", err)
+				time.Sleep(CursorWaitTime)
+				continue
+			}
+
+			for oplog.Next(context.Background()) {
 
 				if err := oplog.Err(); err != nil {
 					log.Error("Error getting next oplog entry: ", err)
@@ -194,9 +195,22 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					Db:         db,
 					Collection: coll,
 				}
-
+				latestTs = l.Timestamp
 				metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 			}
+
+			// Release the cursor
+			oplog.Close(context.Background())
+			time.Sleep(CursorWaitTime)
+
+			// Refresh the latest timestamp from the checkpoint stored in the DB
+			// Every minute, we will refresh the latest timestamp from the checkpoint stored in the DB
+			// savedTs, err := o.ckptManager.GetCheckpoint(context.Background())
+			// if err != nil {
+			// 	log.Error("Error getting the latest checkpoint: ", err)
+			// } else {
+			// 	latestTs = savedTs.LatestTs
+			// }
 		}
 	}()
 }

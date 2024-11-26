@@ -67,7 +67,7 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 			// Check if we should stop processing
 			select {
 			case <-ow.done:
-				log.Info("stopping oplog writer")
+				log.Info("Stopping oplog writer")
 				return
 			default:
 			}

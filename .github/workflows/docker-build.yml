@@ -1,0 +1,71 @@
+name: Build Docker Image on Tag
+
+on:
+  push:
+    tags:
+      - "v*.*.*"  # Adjust the pattern for your versioning scheme
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      contents: read
+      attestations: write
+      id-token: write
+    steps:
+      # - name: Check out the repo
+      #   uses: actions/checkout@v4
+
+      # - name: Log in to Docker Hub
+      #   uses: docker/login-action@f4ef78c080cd8ba55a85445d5b36e214a81df20a
+      #   with:
+      #     username: ${{ secrets.DOCKER_USERNAME }}
+      #     password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # - name: Extract metadata (tags, labels) for Docker
+      #   id: meta
+      #   uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+      #   with:
+      #     images: my-docker-hub-namespace/my-docker-hub-repository
+
+
+
+
+
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build Docker image
+        id: push
+        uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+        # run: |
+        #   docker build -t sebastienferry/mongo-repl:${{ github.ref_name }} .
+        #   docker tag sebastienferry/mongo-repl:${{ github.ref_name }} sebastienferry/mongo-repl:latest
+
+          # - name: Build and push Docker image
+        
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME}}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+      # - name: Push Docker image
+      #   run: |
+      #     docker push sebastienferry/mongo-repl:${{ github.ref_name }}
+      #     docker push sebastienferry/mongo-repl:latest

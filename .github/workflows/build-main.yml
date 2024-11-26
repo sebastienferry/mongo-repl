@@ -12,6 +12,8 @@ jobs:
   build:
     if: github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'main'
     uses: ./.github/workflows/reusable-workflow.yml
+    with:
+      main-src: "./cmd/repl/main.go"
 
   tag-repo:
     needs: build

@@ -8,3 +8,5 @@ on:
 jobs:
   build:
     uses: ./.github/workflows/reusable-workflow.yml
+    with:
+      main-src: "./cmd/repl/main.go"

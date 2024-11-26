@@ -3,56 +3,87 @@ package repl
 import (
 	"context"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/full"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/incr"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 )
 
 const (
-	UnknownRepl     = iota
-	FullRepl        = 1
-	IncrementalRepl = 2
+	UnknownReplState     = iota
+	InitialReplState     = 1
+	IncrementalReplState = 2
+)
+
+var (
+	ReplicationStates = map[int]string{
+		UnknownReplState:     "Unknown",
+		InitialReplState:     "Initial",
+		IncrementalReplState: "Incremental",
+	}
 )
 
 func StartReplication(ctx context.Context) {
-	log.Info("Starting replication")
-	replType := getReplType(context.Background())
 
-	// Start the replication based on the type
-	switch replType {
-	case FullRepl:
-		log.Info("Starting full replication")
-		full.StartFullReplication(ctx)
-	case IncrementalRepl:
-		log.Info("Starting incremental replication")
-		StartIncrementalReplication(ctx)
-	default:
-		log.Fatal("Unknown replication type")
+	log.Info("starting replication")
+	checkpointManager := checkpoint.NewMongoCheckpointService(
+		config.Current.Repl.Incr.State.Database, config.Current.Repl.Incr.State.Collection)
+
+	replicationState := UnknownReplState
+	for replicationState < IncrementalReplState {
+
+		// Determine the replication state
+		ckpt, err := checkpointManager.GetCheckpoint(ctx)
+		if err != nil {
+			log.Fatal("error getting the checkpoint: ", err)
+		}
+
+		metrics.CheckpointGauge.Set(float64(ckpt.LatestTs.T))
+
+		var state int = getReplState(ckpt)
+		log.Info("replication state: ", ReplicationStates[state])
+
+		// Start the replication based on the type
+		switch state {
+		case InitialReplState:
+			log.Info("starting full replication")
+			// Block until the full replication is done
+			full.StartFullReplication(ctx, checkpointManager)
+		case IncrementalReplState:
+			log.Info("starting incremental replication")
+			// Run asynchronously the incremental replication
+			incr.StartIncrementalReplication(ctx, checkpointManager)
+			// And exit the function
+			return
+		default:
+			log.Fatal("unknown replication type")
+		}
 	}
-
-	log.Info("Replication type: ", replType)
 }
 
 // Check the replication state to determine if
 // a full document replication is needed of if we can proceed
 // with the incremental replication based on the oplog.
-func getReplType(ctx context.Context) int {
+func getReplState(ckpt checkpoint.Checkpoint) int {
 	// Check the replication state
 	log.Info("Checking replication state")
 
 	// We start with an unknown replication state
-	foundReplType := UnknownRepl
+	foundReplType := UnknownReplState
 
-	var lastLsnSync int64 = GetLastLsnSynched(ctx)
+	var lastLsnSync int64 = ckpt.LatestLSN
 	if lastLsnSync == 0 {
 		log.Info("No previous replication state found")
-		foundReplType = FullRepl
+		foundReplType = InitialReplState
 	} else {
 
 		// We need to chech if the last LSN synched on the target
 		// is included in the oplog of the source. Otherwise we need
 		// to perform a full replication.
 		log.Info("Last LSN synched: ", lastLsnSync)
-		foundReplType = IncrementalRepl
+		foundReplType = IncrementalReplState
 	}
 	return foundReplType
 }

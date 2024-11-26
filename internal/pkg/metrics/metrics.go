@@ -25,6 +25,26 @@ var (
 		Name: "mongo_repl_full_sync_documents_error_total",
 		Help: "The total number of documents written during a full sync",
 	}, []string{"database", "collection", "error"})
+
+	IncrSyncOplogReadCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mongo_repl_incr_sync_oplog_read_total",
+		Help: "The total number of documents fetched during an incremental sync",
+	}, []string{"database", "collection", "operation"})
+
+	IncrSyncOplogWriteCounter = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mongo_repl_incr_sync_oplog_write_total",
+		Help: "The total number of documents written during an incremental sync",
+	}, []string{"database", "collection", "operation"})
+
+	CheckpointGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "mongo_repl_incr_sync_checkpoint",
+		Help: "The checkpoint of the incremental sync",
+	})
+
+	MongoReplSourceTotalDocumentCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mongo_repl_total_document_count",
+		Help: "The total number of documents in the source database",
+	}, []string{"origin", "database", "collection"})
 )
 
 func init() {
@@ -33,4 +53,8 @@ func init() {
 	Registry.MustRegister(FullSyncReadCounter)
 	Registry.MustRegister(FullSyncWriteCounter)
 	Registry.MustRegister(FullSyncErrorTotal)
+	Registry.MustRegister(IncrSyncOplogReadCounter)
+	Registry.MustRegister(IncrSyncOplogWriteCounter)
+	Registry.MustRegister(CheckpointGauge)
+	Registry.MustRegister(MongoReplSourceTotalDocumentCount)
 }

@@ -1,5 +1,8 @@
 package incr
 
+import "context"
+
 type Reader interface {
-	StartReader()
+	StartReader(context.Context)
+	StopReader(context.Context)
 }

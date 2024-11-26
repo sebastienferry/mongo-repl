@@ -16,6 +16,7 @@ import (
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -38,22 +39,38 @@ const (
 type OplogWriterSingle struct {
 	queuedLogs   chan *ChangeLog
 	fullFinishTs int64
+	done         chan bool
+	ckptManager  checkpoint.CheckpointManager
 }
 
-func NewOplogWriter(fullFinishTs int64, queuedLogs chan *ChangeLog) *OplogWriterSingle {
+func NewOplogWriter(fullFinishTs int64, queuedLogs chan *ChangeLog, ckptManager checkpoint.CheckpointManager) *OplogWriterSingle {
 	return &OplogWriterSingle{
 		queuedLogs:   queuedLogs,
 		fullFinishTs: fullFinishTs,
+		done:         make(chan bool),
+		ckptManager:  ckptManager,
 	}
 }
 
+func (ow *OplogWriterSingle) StopWriter() {
+	ow.done <- true
+}
+
 // Start the writer
-func (ow *OplogWriterSingle) StartWriter() {
+func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 
 	log.Info("starting oplog writer")
 
 	go func() {
 		for l := range ow.queuedLogs {
+
+			// Check if we should stop processing
+			select {
+			case <-ow.done:
+				log.Info("stopping oplog writer")
+				return
+			default:
+			}
 
 			if l.Version != 2 {
 				log.Warn(OplogVersionError, log.Fields{"version": l.Version})
@@ -88,6 +105,12 @@ func (ow *OplogWriterSingle) StartWriter() {
 					"id":  id,
 				})
 			}
+
+			metrics.IncrSyncOplogWriteCounter.WithLabelValues(l.Db, l.Collection, l.Operation).Inc()
+			metrics.CheckpointGauge.Set(float64(l.ParsedLog.Timestamp.T))
+
+			// Save the checkpoint
+			ow.ckptManager.UpdateCheckpoint(ctx, l.Timestamp)
 		}
 	}()
 }

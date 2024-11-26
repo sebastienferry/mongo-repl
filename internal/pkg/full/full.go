@@ -88,12 +88,12 @@ func StartFullReplication(ctx context.Context, checkpointManager checkpoint.Chec
 		})
 
 		// As the full replication is finished, we can save the checkpoint
-		checkpointManager.StoreCheckpoint(ctx, checkpoint.Checkpoint{
-			Name:            db,
-			LatestDate:      time.Unix(int64(oplogBoundaries.Newest.T), 0),
-			LatestTs:        oplogBoundaries.Newest,
-			LatestTimestamp: checkpoint.ToInt64(oplogBoundaries.Newest),
-		})
+		checkpointManager.SetCheckpoint(ctx, checkpoint.Checkpoint{
+			Name:      db,
+			LatestTs:  oplogBoundaries.Newest,
+			Latest:    checkpoint.ToDate(oplogBoundaries.Newest),
+			LatestLSN: checkpoint.ToInt64(oplogBoundaries.Newest),
+		}, true)
 
 		// ckptMap = map[string]utils.TimestampNode{
 		// 	coordinator.MongoS.ReplicaName: {

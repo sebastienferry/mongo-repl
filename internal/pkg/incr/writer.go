@@ -1,5 +1,8 @@
 package incr
 
+import "context"
+
 type Writer interface {
-	StartWriter()
+	StartWriter(context.Context)
+	StopWriter(context.Context)
 }

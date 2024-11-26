@@ -8,6 +8,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -74,16 +75,33 @@ type GenericObject struct {
 }
 
 type OplogReader struct {
-	startingCkpt checkpoint.Checkpoint
+	ckptManager checkpoint.CheckpointManager
+	done        chan bool
 }
 
-func NewOplogReader(startingCkpt checkpoint.Checkpoint) *OplogReader {
+func NewOplogReader(ckptManager checkpoint.CheckpointManager) *OplogReader {
 	return &OplogReader{
-		startingCkpt: startingCkpt,
+		ckptManager: ckptManager,
 	}
 }
 
-func (o *OplogReader) StartReader() error {
+func (o *OplogReader) StartReader(ctx context.Context) {
+
+	// Get the starting timestamp
+	startingTimestamp, err := o.ckptManager.GetCheckpoint(context.TODO())
+	if err != nil {
+		log.Fatal("Error getting the checkpoint: ", err)
+	}
+
+	// Check the starting timestamp is within the boundaries of the oplog
+	oplogBoundaries, err := checkpoint.GetReplicasetOplogBoundaries()
+	if err != nil {
+		log.Fatal("Error computing the last checkpoint: ", err)
+	}
+
+	if startingTimestamp.LatestTs.Compare(oplogBoundaries.Oldest) < 0 {
+		log.Fatal("The starting timestamp is older than the oldest timestamp in the oplog")
+	}
 
 	findOptions := options.Find()
 	findOptions.SetBatchSize(int32(8192))
@@ -91,11 +109,7 @@ func (o *OplogReader) StartReader() error {
 	findOptions.SetCursorType(options.Tailable)
 	//findOptions.SetSort(bson.D{{"$natural", 1}})
 
-	startingTimestamp := o.startingCkpt.LatestTimestamp
-
-	//TODO : We probably need to ensure the checkpoint is within the oplog range
-
-	latestTs := checkpoint.FromInt64(startingTimestamp)
+	latestTs := checkpoint.FromInt64(startingTimestamp.LatestLSN)
 
 	// Prepare the query
 	filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
@@ -109,69 +123,86 @@ func (o *OplogReader) StartReader() error {
 	}
 
 	queuedLogs := make(chan *ChangeLog, 1000)
-	writer := NewOplogWriter(startingTimestamp, queuedLogs)
-	writer.StartWriter()
+	writer := NewOplogWriter(startingTimestamp.LatestLSN, queuedLogs, o.ckptManager)
+	writer.StartWriter(ctx)
 
-	for {
-		if oplog.Next(context.Background()) {
+	go func() {
+		for {
 
-			if err := oplog.Err(); err != nil {
-				log.Error("Error getting next oplog entry: ", err)
-				// Release the cursor
-				oplog.Close(context.Background())
-				// Wait a bit
-				time.Sleep(1 * time.Second)
-				continue
+			// Check if we should stop processing
+			select {
+			case <-o.done:
+				log.Info("Stopping oplog reader")
+				return
+			default:
 			}
 
-			// Handle the OPLOG entry
-			// MongoShake send this to a channel and use a pool of workers to process the oplog entries
-			// For now, we will process the oplog entry in the same goroutine
+			if oplog.Next(context.Background()) {
 
-			var bytes []byte = oplog.Current
+				if err := oplog.Err(); err != nil {
+					log.Error("Error getting next oplog entry: ", err)
+					// Release the cursor
+					oplog.Close(context.Background())
+					// Wait a bit
+					time.Sleep(1 * time.Second)
+					continue
+				}
 
-			// Deserialize the oplog entry
-			l := ParsedLog{}
+				// Handle the OPLOG entry
+				// MongoShake send this to a channel and use a pool of workers to process the oplog entries
+				// For now, we will process the oplog entry in the same goroutine
 
-			err := bson.Unmarshal(bytes, &l)
-			if err != nil {
-				log.Error("Error unmarshalling oplog entry: ", err)
-				continue
-			}
+				var bytes []byte = oplog.Current
 
-			// Filter unwanted data
-			db, coll := GetDbAndCollection(l.Namespace)
-			if !shouldReplicate(db, coll) {
-				continue
-			}
+				// Deserialize the oplog entry
+				l := ParsedLog{}
 
-			// // Try to get the object id
-			// var id primitive.ObjectID
-			// if config.Current.Logging.Level == log.DebugLevel {
-			// 	for _, bsonE := range l.Object {
-			// 		if bsonE.Key == "_id" {
-			// 			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
-			// 				id = oid
-			// 			}
-			// 		}
-			// 	}
-			// }
+				err := bson.Unmarshal(bytes, &l)
+				if err != nil {
+					log.Error("Error unmarshalling oplog entry: ", err)
+					continue
+				}
 
-			// log.DebugWithFields("OPLOG entry: ", log.Fields{
-			// 	"ns": l.Namespace,
-			// 	"op": l.Operation,
-			// 	"ts": l.Timestamp,
-			// 	"id": id,
-			// })
+				// Filter unwanted data
+				db, coll := GetDbAndCollection(l.Namespace)
+				if !shouldReplicate(db, coll) {
+					continue
+				}
 
-			// Process the oplog entry
-			queuedLogs <- &ChangeLog{
-				ParsedLog:  l,
-				Db:         db,
-				Collection: coll,
+				// // Try to get the object id
+				// var id primitive.ObjectID
+				// if config.Current.Logging.Level == log.DebugLevel {
+				// 	for _, bsonE := range l.Object {
+				// 		if bsonE.Key == "_id" {
+				// 			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
+				// 				id = oid
+				// 			}
+				// 		}
+				// 	}
+				// }
+
+				// log.DebugWithFields("OPLOG entry: ", log.Fields{
+				// 	"ns": l.Namespace,
+				// 	"op": l.Operation,
+				// 	"ts": l.Timestamp,
+				// 	"id": id,
+				// })
+
+				// Process the oplog entry
+				queuedLogs <- &ChangeLog{
+					ParsedLog:  l,
+					Db:         db,
+					Collection: coll,
+				}
+
+				metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 			}
 		}
-	}
+	}()
+}
+
+func (o *OplogReader) StopReader() {
+	o.done <- true
 }
 
 func shouldReplicate(db string, collection string) bool {

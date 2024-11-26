@@ -2,17 +2,22 @@ package checkpoint
 
 import (
 	"context"
+	"time"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type CheckpointManager interface {
 	GetCheckpoint(context.Context) (Checkpoint, error)
-	StoreCheckpoint(context.Context, Checkpoint) error
+	SetCheckpoint(context.Context, Checkpoint, bool) error
+	UpdateCheckpoint(context.Context, primitive.Timestamp)
+	StartAutosave(context.Context)
+	StopAutosave()
 }
 
 type MongoCheckpoint struct {
@@ -25,6 +30,9 @@ type MongoCheckpoint struct {
 
 	// In-memory storage of the current checkpoint
 	Current Checkpoint
+
+	// Autosave stop
+	autosave chan bool
 }
 
 func NewMongoCheckpointService(db string, coll string) *MongoCheckpoint {
@@ -67,27 +75,76 @@ func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error)
 		log.Fatal("Error decoding the result: ", err)
 	}
 
+	s.Current = ckpt
 	return ckpt, nil
 }
 
-func (s *MongoCheckpoint) StoreCheckpoint(ctx context.Context, c Checkpoint) error {
+func (s *MongoCheckpoint) SetCheckpoint(ctx context.Context, c Checkpoint, save bool) error {
 
 	// Store the checkpoint in memory
 	s.Current = c
 
+	// Save the checkpoint if requested
+	if save {
+		return s.saveCheckpoint(ctx)
+	}
+
+	return nil
+}
+
+func (s *MongoCheckpoint) UpdateCheckpoint(ctx context.Context, ts primitive.Timestamp) {
+
+	// TODO: Should not be the following operation an atomic one?
+	// We have the autosave running. We should stop it, update the checkpoint and restart it.
+	s.Current.LatestTs = ts
+	s.Current.Latest = ToDate(ts)
+	s.Current.LatestLSN = ToInt64(ts)
+	s.Current.SavedAt = time.Now()
+}
+
+func (s *MongoCheckpoint) saveCheckpoint(ctx context.Context) error {
+
+	// Change the saved information
+	s.Current.SavedAt = time.Now()
+
 	// Store the checkpoint in the database
 	opts := options.Update().SetUpsert(true)
-	filter := bson.M{"name": c.Name}
+	filter := bson.M{"name": s.Current.Name}
 	update := bson.M{"$set": s.Current}
 
 	_, err := mong.Registry.GetTarget().Client.Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
 	if err != nil {
 		log.WarnWithFields("Checkpoint upsert error", log.Fields{
-			"checkpoint": c.Name,
+			"checkpoint": s.Current.Name,
 			"updates":    update,
 			"error":      err,
 		})
 		return err
 	}
 	return nil
+}
+
+func (s *MongoCheckpoint) StartAutosave(context.Context) {
+
+	log.Info("Starting autosave")
+	go func() {
+		for {
+
+			// Check if the autosave has been stopped
+			select {
+			case <-s.autosave:
+				return
+			default:
+			}
+
+			// Store the checkpoint
+			s.saveCheckpoint(context.Background())
+			log.Info("Checkpoint autosaved: ", s.Current)
+			time.Sleep(10 * time.Second)
+		}
+	}()
+}
+
+func (s *MongoCheckpoint) StopAutosave() {
+	s.autosave <- true
 }

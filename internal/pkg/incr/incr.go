@@ -2,23 +2,16 @@ package incr
 
 import (
 	"context"
-	"log"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 )
 
 func StartIncrementalReplication(ctx context.Context, checkpointManager checkpoint.CheckpointManager) {
 
-	checkpoint, err := checkpointManager.GetCheckpoint(ctx)
-	if err != nil {
-		log.Fatal("Error getting the checkpoint: ", err)
-	}
+	// Create the reader and start it
+	reader := NewOplogReader(checkpointManager)
+	reader.StartReader(ctx)
 
-	// Read the oplog
-	reader := NewOplogReader(checkpoint)
-	reader.StartReader()
-}
-
-func parseOplog() {
-
+	// Also, start the checkpoint autosave
+	checkpointManager.StartAutosave(ctx)
 }

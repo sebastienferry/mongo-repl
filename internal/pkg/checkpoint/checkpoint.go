@@ -20,13 +20,14 @@ const (
 
 type Checkpoint struct {
 	//Id              string    `bson:"_id" json:"_id" omitempty`
-	Name            string              `bson:"name" json:"name" omitempty`
-	LatestDate      time.Time           `bson:"date" json:"date" omitempty`
-	LatestTs        primitive.Timestamp `bson:"ts" json:"ts" omitempty`
-	LatestTimestamp int64               `bson:"timestamp" json:"timestamp"`
+	Name      string              `bson:"name" json:"name" omitempty`
+	SavedAt   time.Time           `bson:"saved" json:"saved" omitempty`
+	Latest    time.Time           `bson:"latest" json:"latest" omitempty`
+	LatestTs  primitive.Timestamp `bson:"ts" json:"ts" omitempty`
+	LatestLSN int64               `bson:"lsn" json:"lsn" omitempty`
 }
 
-func GetReplicasetOplogBoundaries() (TSWindow, error) {
+func GetReplicasetOplogBoundaries() (TsWindow, error) {
 
 	// smallestNew := MongoTimestampMax
 	// biggestNew := MongoTimestampMin
@@ -40,15 +41,15 @@ func GetReplicasetOplogBoundaries() (TSWindow, error) {
 	var newest primitive.Timestamp = MongoTimestampMin
 	newest, err := getOplogTimestamp(mong.Registry.GetSource().Client, Newest)
 	if err != nil {
-		return TSWindow{}, err
+		return TsWindow{}, err
 	} else if IsZero(newest) {
-		return TSWindow{}, fmt.Errorf("illegal newest timestamp == 0")
+		return TsWindow{}, fmt.Errorf("illegal newest timestamp == 0")
 	}
 
 	var oldest primitive.Timestamp = MongoTimestampMin
 	oldest, err = getOplogTimestamp(mong.Registry.GetSource().Client, Oldest)
 	if err != nil {
-		return TSWindow{}, err
+		return TsWindow{}, err
 	}
 
 	// tsMap[database] = TimestampNode{
@@ -56,7 +57,7 @@ func GetReplicasetOplogBoundaries() (TSWindow, error) {
 	// 	Newest: newest,
 	// }
 
-	return TSWindow{
+	return TsWindow{
 		Oldest: oldest,
 		Newest: newest,
 	}, nil

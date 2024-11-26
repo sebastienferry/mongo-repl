@@ -2,6 +2,7 @@ package checkpoint
 
 import (
 	"math"
+	"time"
 
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -36,12 +37,16 @@ func FromInt64(i int64) primitive.Timestamp {
 	return primitive.Timestamp{uint32(i >> 32), uint32(i)}
 }
 
+func ToDate(ts primitive.Timestamp) time.Time {
+	return time.Unix(int64(ts.T), int64(ts.I))
+}
+
 var (
 	MongoTimestampMax = primitive.Timestamp{math.MaxUint32, math.MaxUint32}
 	MongoTimestampMin = primitive.Timestamp{0, 0}
 )
 
-type TSWindow struct {
+type TsWindow struct {
 	Oldest primitive.Timestamp
 	Newest primitive.Timestamp
 }

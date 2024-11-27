@@ -42,6 +42,18 @@ The tool fetch its configuration from a local `yaml` file. A sample if provided
 in the `/conf` directory. The env variable `CONFIG_FILE_PATH` is used to pass the
 path to the configuration file at start. See [config](./docs/config.md).
 
+Run from command-line:
+
+Run container:
+
+```
+docker run -it --rm \
+-p 3000:3000 \
+--mount type=bind,source=/path/to/config.yaml,target=/app/conf.yaml,readonly \
+--env-file /path/to/.env \
+sebastienferry/mongo-repl:v0.0.8
+```
+
 ## Contributions
 
 This project is not yet open to contributions. This might change in the future

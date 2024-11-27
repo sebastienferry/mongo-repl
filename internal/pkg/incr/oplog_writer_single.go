@@ -112,6 +112,10 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 			// Save the checkpoint
 			ow.ckptManager.UpdateCheckpoint(ctx, l.Timestamp)
 		}
+
+		// We should not reach this point
+		log.Error("oplog writer stopped unexpectedly")
+
 	}()
 }
 

@@ -164,6 +164,11 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					continue
 				}
 
+				// Filter out unwanted operations
+				if keep, ok := FilteredOperations[l.Operation]; ok && keep {
+					continue
+				}
+
 				// Filter unwanted data
 				db, coll := GetDbAndCollection(l.Namespace)
 				if !shouldReplicate(db, coll) {

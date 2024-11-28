@@ -1,0 +1,18 @@
+networks:
+  mynetwork:
+    external: true
+
+services:
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/data
+    network_mode: host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      # Replace me
+      # - "somehost:1.2.3.4"
+
+volumes:
+  prometheus-data:

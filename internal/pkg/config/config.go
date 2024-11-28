@@ -58,12 +58,7 @@ func NewConfig() *AppConfig {
 	return &AppConfig{}
 }
 
-var Current *AppConfig
-
-func init() {
-	Current = NewConfig()
-	Current.LoadConfig()
-}
+var Current *AppConfig = NewConfig()
 
 // LoadConfig loads the configuration from a file
 func (c *AppConfig) LoadConfig() error {

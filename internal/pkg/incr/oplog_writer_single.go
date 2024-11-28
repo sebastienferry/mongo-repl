@@ -18,6 +18,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -37,13 +38,13 @@ const (
 )
 
 type OplogWriterSingle struct {
-	queuedLogs   chan *ChangeLog
+	queuedLogs   chan *oplog.ChangeLog
 	fullFinishTs int64
 	done         chan bool
 	ckptManager  checkpoint.CheckpointManager
 }
 
-func NewOplogWriter(fullFinishTs int64, queuedLogs chan *ChangeLog, ckptManager checkpoint.CheckpointManager) *OplogWriterSingle {
+func NewOplogWriter(fullFinishTs int64, queuedLogs chan *oplog.ChangeLog, ckptManager checkpoint.CheckpointManager) *OplogWriterSingle {
 	return &OplogWriterSingle{
 		queuedLogs:   queuedLogs,
 		fullFinishTs: fullFinishTs,
@@ -119,7 +120,7 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 	}()
 }
 
-func (ow *OplogWriterSingle) Insert(l *ChangeLog) error {
+func (ow *OplogWriterSingle) Insert(l *oplog.ChangeLog) error {
 
 	// DB Connection
 	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
@@ -139,7 +140,7 @@ func (ow *OplogWriterSingle) Insert(l *ChangeLog) error {
 }
 
 // Upsert the document
-func (sw *OplogWriterSingle) Upsert(l *ChangeLog, upsert bool) error {
+func (sw *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
 	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
@@ -200,7 +201,7 @@ func (sw *OplogWriterSingle) Upsert(l *ChangeLog, upsert bool) error {
 }
 
 // Update the document
-func (ow *OplogWriterSingle) Update(l *ChangeLog, upsert bool) error {
+func (ow *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
 	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
@@ -268,7 +269,7 @@ func (ow *OplogWriterSingle) Update(l *ChangeLog, upsert bool) error {
 	return nil
 }
 
-func (ow *OplogWriterSingle) Delete(l *ChangeLog) error {
+func (ow *OplogWriterSingle) Delete(l *oplog.ChangeLog) error {
 	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
 	_, err := collectionHandle.DeleteOne(context.Background(), l.ParsedLog.Object)
 	if err != nil {
@@ -324,7 +325,7 @@ func IgnoreError(err error, op string, isFullSyncStage bool) bool {
 	return false
 }
 
-func debugLog(id primitive.ObjectID, l *ParsedLog) {
+func debugLog(id primitive.ObjectID, l *oplog.ParsedLog) {
 	log.DebugWithFields("OPLOG entry: ", log.Fields{
 		"ns": l.Namespace,
 		"op": l.Operation,

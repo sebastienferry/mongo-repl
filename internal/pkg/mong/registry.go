@@ -7,10 +7,10 @@ type MongoRegistry struct {
 	target *Mong
 }
 
-func NewMongoRegistry() *MongoRegistry {
+func NewMongoRegistry(appConfig *config.AppConfig) *MongoRegistry {
 
-	source := NewMongo(config.Current.Repl.Source)
-	target := NewMongo(config.Current.Repl.Target)
+	source := NewMongo(appConfig.Repl.Source)
+	target := NewMongo(appConfig.Repl.Target)
 
 	return &MongoRegistry{
 		source: source,
@@ -18,7 +18,7 @@ func NewMongoRegistry() *MongoRegistry {
 	}
 }
 
-var Registry *MongoRegistry = NewMongoRegistry()
+var Registry *MongoRegistry = nil
 
 func (m *MongoRegistry) GetSource() *Mong {
 	return m.source

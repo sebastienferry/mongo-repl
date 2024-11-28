@@ -2,16 +2,15 @@ package incr
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -19,73 +18,17 @@ const (
 	CursorWaitTime = 5 * time.Second
 )
 
-var (
-	FilteredOperations = map[string]bool{
-		"n":  true, // no-op
-		"c":  true, // command
-		"db": true, // database
-
-		// Keep the following operations
-		"u": false, // update
-		"d": false, // delete
-		"i": false, // insert
-	}
-)
-
-type GenericOplog struct {
-	Raw    []byte
-	Parsed *ChangeLog
-}
-
-type ChangeLog struct {
-	ParsedLog
-
-	// /*
-	//  * Every field subsequent declared is NEVER persistent or
-	//  * transfer on network connection. They only be parsed from
-	//  * respective logic
-	//  */
-	// UniqueIndexesUpdates bson.M // generate by CollisionMatrix
-	// RawSize              int    // generate by Decorator
-	// SourceId             int    // generate by Validator
-
-	// for update operation, the update condition
-	Db         string
-	Collection string
-}
-
-type ParsedLog struct {
-	Timestamp     primitive.Timestamp `bson:"ts" json:"ts"`
-	Term          *int64              `bson:"t" json:"t"`
-	Hash          *int64              `bson:"h" json:"h"`
-	Version       int                 `bson:"v" json:"v"`
-	Operation     string              `bson:"op" json:"op"`
-	Gid           string              `bson:"g,omitempty" json:"g,omitempty"`
-	Namespace     string              `bson:"ns" json:"ns"`
-	Object        bson.D              `bson:"o" json:"o"`
-	Query         bson.D              `bson:"o2" json:"o2"`                                       // update condition
-	UniqueIndexes bson.M              `bson:"uk,omitempty" json:"uk,omitempty"`                   //
-	LSID          bson.Raw            `bson:"lsid,omitempty" json:"lsid,omitempty"`               // mark the session id, used in transaction
-	FromMigrate   bool                `bson:"fromMigrate,omitempty" json:"fromMigrate,omitempty"` // move chunk
-	TxnNumber     *int64              `bson:"txnNumber,omitempty" json:"txnNumber,omitempty"`     // transaction number in session
-	DocumentKey   bson.D              `bson:"documentKey,omitempty" json:"documentKey,omitempty"` // exists when source collection is sharded, only including shard key and _id
-	PrevOpTime    bson.Raw            `bson:"prevOpTime,omitempty"`
-	UI            *primitive.Binary   `bson:"ui,omitempty" json:"ui,omitempty"` // do not enable currently
-}
-
-type GenericObject struct {
-	// The object id
-	Id primitive.ObjectID `bson:"_id" json:"_id omitempty"`
-}
-
 type OplogReader struct {
 	ckptManager checkpoint.CheckpointManager
+	oplogFilter *filter.OplogFilter
 	done        chan bool
 }
 
 func NewOplogReader(ckptManager checkpoint.CheckpointManager) *OplogReader {
 	return &OplogReader{
 		ckptManager: ckptManager,
+		oplogFilter: filter.NewOplogFilter(),
+		done:        make(chan bool),
 	}
 }
 
@@ -114,7 +57,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 	//findOptions.SetSort(bson.D{{"$natural", 1}})
 	latestTs := checkpoint.FromInt64(startingTimestamp.LatestLSN)
 
-	queuedLogs := make(chan *ChangeLog, 1000)
+	queuedLogs := make(chan *oplog.ChangeLog, 1000)
 	writer := NewOplogWriter(startingTimestamp.LatestLSN, queuedLogs, o.ckptManager)
 	writer.StartWriter(ctx)
 
@@ -131,19 +74,19 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 			// Get the oplog cursor
 			filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
-			oplog, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+			cur, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
 			if err != nil {
 				log.Error("Error getting oplog cursor: ", err)
 				time.Sleep(CursorWaitTime)
 				continue
 			}
 
-			for oplog.Next(context.Background()) {
+			for cur.Next(context.Background()) {
 
-				if err := oplog.Err(); err != nil {
+				if err := cur.Err(); err != nil {
 					log.Error("Error getting next oplog entry: ", err)
 					// Release the cursor
-					oplog.Close(context.Background())
+					cur.Close(context.Background())
 					// Wait a bit
 					time.Sleep(1 * time.Second)
 					continue
@@ -153,10 +96,10 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 				// MongoShake send this to a channel and use a pool of workers to process the oplog entries
 				// For now, we will process the oplog entry in the same goroutine
 
-				var bytes []byte = oplog.Current
+				var bytes []byte = cur.Current
 
 				// Deserialize the oplog entry
-				l := ParsedLog{}
+				l := oplog.ParsedLog{}
 
 				err := bson.Unmarshal(bytes, &l)
 				if err != nil {
@@ -164,19 +107,11 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					continue
 				}
 
+				// Get the database and collection
+				db, coll := oplog.GetDbAndCollection(l.Namespace)
+
 				// Filter out unwanted operations
-				if !FilteredOperations[l.Operation] {
-					continue
-				}
-
-				// Filter out unwanted namespaces
-				if l.Namespace == "" {
-					continue
-				}
-
-				// Filter unwanted data
-				db, coll := GetDbAndCollection(l.Namespace)
-				if !shouldReplicate(db, coll) {
+				if !o.oplogFilter.Keep(db, coll, l.Operation) {
 					continue
 				}
 
@@ -200,7 +135,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 				// })
 
 				// Process the oplog entry
-				queuedLogs <- &ChangeLog{
+				queuedLogs <- &oplog.ChangeLog{
 					ParsedLog:  l,
 					Db:         db,
 					Collection: coll,
@@ -210,7 +145,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 			}
 
 			// Release the cursor
-			oplog.Close(context.Background())
+			cur.Close(context.Background())
 			time.Sleep(CursorWaitTime)
 
 			// Refresh the latest timestamp from the checkpoint stored in the DB
@@ -227,36 +162,4 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 func (o *OplogReader) StopReader() {
 	o.done <- true
-}
-
-func shouldReplicate(db string, collection string) bool {
-
-	// Check if the database is part of the one we are targeting
-	if ok := config.Current.Repl.DatabasesIn[db]; !ok {
-		return false
-	}
-
-	if len(config.Current.Repl.FiltersIn) > 0 {
-		if _, ok := config.Current.Repl.FiltersIn[collection]; !ok {
-			return false
-		}
-		return true
-	} else if config.Current.Repl.FiltersOut[collection] {
-		return false
-	}
-	return true
-}
-
-// Split the namespace to get the database name
-// namespace = "database.collection.bla"
-// parts = ["database", "collection.bla"]
-func GetDbAndCollection(namespace string) (string, string) {
-	var parts []string = []string{namespace}
-	sep := strings.Index(namespace, ".")
-	if sep > 0 {
-		parts = []string{namespace[:sep], namespace[sep+1:]}
-	}
-	var db string = parts[0]
-	var coll string = parts[1]
-	return db, coll
 }

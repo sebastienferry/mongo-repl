@@ -7,24 +7,27 @@ logging:
 # Define the replication
 repl:
   
+  # Define the replication id
+  # This is used to store the replication state
+  # The default value is "default"
+  id: "rs0_to_rs1_sample"
+
   # Mongo source et target configuration
   # Eventually, you can override those using environment variables
   # SOURCE and TARGET
-  source: 
-  target: 
+  source: mongodb://localhost:27017/db?replicaSet=rs0&retryWrites=true&w=majority
+  target: mongodb://localhost:37017/db?replicaSet=rs1&retryWrites=true&w=majority
 
   # Define the database to replicate
   databases:
-    - Db1
+    - Animals
+    - Plants
 
   # Filter the collections to include or exclude.
   # If both are defined, the filter_in will have the priority.
   filters:
     in:
-      - collection1
-      - collection2
     out:
-      - collection3
 
   # Full replication configuration
   full:
@@ -39,5 +42,5 @@ repl:
   incr:
     # Define where to store the replication state for the oplog
     state:
-      db: Db1
+      db: MongoRepl
       collection: _repl

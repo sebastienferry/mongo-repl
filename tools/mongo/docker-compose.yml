@@ -1,0 +1,94 @@
+services:
+  rs0-mongo1:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - 27017:27017
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'host.docker.internal:27017',priority:1},{_id:1,host:'host.docker.internal:27018',priority:0.5},{_id:2,host:'host.docker.internal:27019',priority:0.5}]}) }" | mongosh --port 27017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    volumes:
+      - "rs0_mongo1_data:/data/db"
+      - "rs0_mongo1_config:/data/configdb"
+
+  rs0-mongo2:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27018"]
+    ports:
+      - 27018:27018
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "rs0_mongo2_data:/data/db"
+      - "rs0_mongo2_config:/data/configdb"
+
+  rs0-mongo3:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27019"]
+    ports:
+      - 27019:27019
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "rs0_mongo3_data:/data/db"
+      - "rs0_mongo3_config:/data/configdb"
+
+  rs1-mongo1:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs1", "--bind_ip_all", "--port", "37017"]
+    ports:
+      - 37017:37017
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs1',members:[{_id:0,host:'host.docker.internal:37017',priority:1},{_id:1,host:'host.docker.internal:37018',priority:0.5},{_id:2,host:'host.docker.internal:37019',priority:0.5}]}) }" | mongosh --port 37017 --quiet
+      interval: 5s
+      timeout: 30s
+      start_period: 0s
+      start_interval: 1s
+      retries: 30
+    volumes:
+      - "rs1_mongo1_data:/data/db"
+      - "rs1_mongo1_config:/data/configdb"
+
+  rs1-mongo2:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs1", "--bind_ip_all", "--port", "37018"]
+    ports:
+      - 37018:37018
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "rs1_mongo2_data:/data/db"
+      - "rs1_mongo2_config:/data/configdb"
+
+  rs1-mongo3:
+    image: mongo:8.0.1
+    command: ["--replSet", "rs1", "--bind_ip_all", "--port", "37019"]
+    ports:
+      - 37019:37019
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - "rs1_mongo3_data:/data/db"
+      - "rs1_mongo3_config:/data/configdb"
+
+volumes:
+  rs0_mongo1_data:
+  rs0_mongo2_data:
+  rs0_mongo3_data:
+  rs0_mongo1_config:
+  rs0_mongo2_config:
+  rs0_mongo3_config:
+  rs1_mongo1_data:
+  rs1_mongo2_data:
+  rs1_mongo3_data:
+  rs1_mongo1_config:
+  rs1_mongo2_config:
+  rs1_mongo3_config:

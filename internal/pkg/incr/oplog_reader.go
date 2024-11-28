@@ -20,14 +20,14 @@ const (
 
 type OplogReader struct {
 	ckptManager checkpoint.CheckpointManager
-	oplogFilter *filter.OplogFilter
+	oplogFilter *filter.Filter
 	done        chan bool
 }
 
 func NewOplogReader(ckptManager checkpoint.CheckpointManager) *OplogReader {
 	return &OplogReader{
 		ckptManager: ckptManager,
-		oplogFilter: filter.NewOplogFilter(),
+		oplogFilter: filter.NewFilter(),
 		done:        make(chan bool),
 	}
 }
@@ -111,7 +111,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 				db, coll := oplog.GetDbAndCollection(l.Namespace)
 
 				// Filter out unwanted operations
-				if !o.oplogFilter.Keep(db, coll, l.Operation) {
+				if !o.oplogFilter.KeepOperation(l.Operation) || !o.oplogFilter.KeepCollection(db, coll) {
 					continue
 				}
 

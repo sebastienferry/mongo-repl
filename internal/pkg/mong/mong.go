@@ -47,18 +47,6 @@ func connect(ctx context.Context, connectUri string) (*mongo.Client, error) {
 	return client, nil
 }
 
-// List the collections of a database
-func ListCollections(ctx context.Context, db string, mongo *Mong) ([]string, error) {
-
-	// List the collections
-	collections, err := mongo.Client.Database(db).ListCollectionNames(ctx, bson.D{})
-	if err != nil {
-		return nil, err
-	}
-
-	return collections, nil
-}
-
 // IsDuplicateKeyError checks if the error is a duplicate key error
 func IsDuplicateKeyError(err error) bool {
 	// handles SERVER-7164 and SERVER-11493

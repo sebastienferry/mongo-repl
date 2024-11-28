@@ -24,6 +24,9 @@ type IncrReplConfig struct {
 }
 
 type ReplConfig struct {
+
+	// The replication id
+	Id string `yaml:"id"`
 	// The address of the MongoDB server
 	Source string `json:"Source" yaml:"source"`
 	// The address of the MongoDB server
@@ -84,6 +87,11 @@ func (c *AppConfig) LoadConfig() error {
 	// Override the log level if set in the environment
 	if os.Getenv("LOG_LEVEL") != "" {
 		c.Logging.Level = os.Getenv("LOG_LEVEL")
+	}
+
+	// Ensure the ID is set
+	if c.Repl.Id == "" {
+		c.Repl.Id = "default"
 	}
 
 	// Override the source and target if set in the environment

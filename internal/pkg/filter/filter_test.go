@@ -19,7 +19,7 @@ func TestOplogFilter_Keep(t *testing.T) {
 		},
 	}
 
-	filter := NewOplogFilter()
+	filter := NewFilter()
 
 	tests := []struct {
 		db         string
@@ -46,7 +46,7 @@ func TestOplogFilter_Keep(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		result := filter.Keep(test.db, test.collection, test.operation)
+		result := filter.KeepOperation(test.db) && filter.KeepCollection(test.db, test.collection)
 		if result != test.expected {
 			t.Errorf("Keep(%s, %s, %s) = %v; want %v", test.db, test.collection, test.operation, result, test.expected)
 		}

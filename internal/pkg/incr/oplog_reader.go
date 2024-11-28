@@ -165,7 +165,12 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 				}
 
 				// Filter out unwanted operations
-				if keep, ok := FilteredOperations[l.Operation]; ok && keep {
+				if keep, ok := FilteredOperations[l.Operation]; ok && !keep {
+					continue
+				}
+
+				// Filter out unwanted namespaces
+				if l.Namespace == "" {
 					continue
 				}
 

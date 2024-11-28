@@ -24,3 +24,6 @@ jobs:
       
       - name: Build project
         run: go build ${{ inputs.main-src }}
+
+      - name: Test project
+        run: go test ./...

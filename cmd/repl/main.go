@@ -33,7 +33,7 @@ func main() {
 		DisableColors: false,
 	})
 	log.Debug("Starting mongo-repl")
-	log.Debug(fmt.Sprintf("log level: %i (%s)", level, config.Current.Logging.Level))
+	log.Debug(fmt.Sprintf("log level: %d (%s)", level, config.Current.Logging.Level))
 
 	// Setup mongodb connectivity
 	mong.Registry = mong.NewMongoRegistry(config.Current)

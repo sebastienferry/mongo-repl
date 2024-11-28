@@ -14,8 +14,8 @@ import (
 
 type CheckpointManager interface {
 	GetCheckpoint(context.Context) (Checkpoint, error)
-	SetCheckpoint(context.Context, Checkpoint, bool) error
-	UpdateCheckpoint(context.Context, primitive.Timestamp)
+	SetCheckpoint(context.Context, primitive.Timestamp, bool) error
+	MoveCheckpointForward(primitive.Timestamp)
 	StartAutosave(context.Context)
 	StopAutosave()
 }
@@ -35,10 +35,19 @@ type MongoCheckpoint struct {
 	autosave chan bool
 }
 
-func NewMongoCheckpointService(db string, coll string) *MongoCheckpoint {
+func NewMongoCheckpointService(name string, ckptDb string, ckptColl string) *MongoCheckpoint {
+
+	if name == "" {
+		name = "default"
+	}
+
 	return &MongoCheckpoint{
-		DB:         db,
-		Collection: coll,
+		DB:         ckptDb,
+		Collection: ckptColl,
+		autosave:   make(chan bool),
+		Current: Checkpoint{
+			Name: name,
+		},
 	}
 }
 
@@ -79,10 +88,10 @@ func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error)
 	return ckpt, nil
 }
 
-func (s *MongoCheckpoint) SetCheckpoint(ctx context.Context, c Checkpoint, save bool) error {
+func (s *MongoCheckpoint) SetCheckpoint(ctx context.Context, ts primitive.Timestamp, save bool) error {
 
 	// Store the checkpoint in memory
-	s.Current = c
+	s.MoveCheckpointForward(ts)
 
 	// Save the checkpoint if requested
 	if save {
@@ -92,7 +101,12 @@ func (s *MongoCheckpoint) SetCheckpoint(ctx context.Context, c Checkpoint, save 
 	return nil
 }
 
-func (s *MongoCheckpoint) UpdateCheckpoint(ctx context.Context, ts primitive.Timestamp) {
+func (s *MongoCheckpoint) MoveCheckpointForward(ts primitive.Timestamp) {
+
+	if ts.T == 0 || ts.T < s.Current.LatestTs.T {
+		log.Warn("Invalid timestamp: ", ts)
+		return
+	}
 
 	// TODO: Should not be the following operation an atomic one?
 	// We have the autosave running. We should stop it, update the checkpoint and restart it.

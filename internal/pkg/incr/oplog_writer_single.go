@@ -111,7 +111,7 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 			metrics.CheckpointGauge.Set(float64(l.ParsedLog.Timestamp.T))
 
 			// Save the checkpoint
-			ow.ckptManager.UpdateCheckpoint(ctx, l.Timestamp)
+			ow.ckptManager.MoveCheckpointForward(l.Timestamp)
 		}
 
 		// We should not reach this point

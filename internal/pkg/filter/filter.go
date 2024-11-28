@@ -4,12 +4,12 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 )
 
-type OplogFilter struct {
+type Filter struct {
 	filteredOperations map[string]bool
 }
 
-func NewOplogFilter() *OplogFilter {
-	return &OplogFilter{
+func NewFilter() *Filter {
+	return &Filter{
 		filteredOperations: map[string]bool{
 			"n":  true, // no-op
 			"c":  true, // command
@@ -23,15 +23,14 @@ func NewOplogFilter() *OplogFilter {
 	}
 }
 
-// Filter the oplog entry
-func (f *OplogFilter) Keep(db string, collection string, operation string) bool {
+// Filter out unwanted operations
+func (f *Filter) KeepOperation(operation string) bool {
+	return !f.filteredOperations[operation]
+}
 
-	// Filter out unwanted operations
-	if f.filteredOperations[operation] {
-		return false
-	}
+// Filter out unwanted namespaces
+func (f *Filter) KeepCollection(db string, collection string) bool {
 
-	// Filter out unwanted namespaces
 	if collection == "" || db == "" {
 		return false
 	}
@@ -41,6 +40,7 @@ func (f *OplogFilter) Keep(db string, collection string, operation string) bool 
 		return false
 	}
 	return true
+
 }
 
 func shouldReplicate(db string, collection string) bool {

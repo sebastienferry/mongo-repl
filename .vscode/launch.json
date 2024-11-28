@@ -10,9 +10,9 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/cmd/repl/main.go",
-            "envFile": "${workspaceFolder}/conf/.env",
+            // "envFile": "${workspaceFolder}/conf/.env",
             "env": {
-                "CONFIG_FILE_PATH": "${workspaceFolder}/conf/config.dev.yaml"
+                "CONFIG_FILE_PATH": "${workspaceFolder}/conf/config.sample.yaml"
             },
         }
     ]

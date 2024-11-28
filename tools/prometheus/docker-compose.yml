@@ -10,9 +10,10 @@ services:
       - prometheus-data:/data
     network_mode: host
     extra_hosts:
-      - "host.docker.internal:host-gateway"
-      # Replace me
-      # - "somehost:1.2.3.4"
+      - "cachedb120k:10.10.8.120"
+    #  - "host.docker.internal:host-gateway"
+    # ports:
+    #   - "9090:9090"
 
 volumes:
   prometheus-data:

@@ -45,19 +45,12 @@ func (r *DocumentReader) StartSync(ctx context.Context) error {
 	log.Info("Start syncing collection ", r.Collection)
 
 	// get total count
-	var res struct {
-		Count       int64   `bson:"count"`
-		Size        float64 `bson:"size"`
-		StorageSize float64 `bson:"storageSize"`
-	}
-
-	if err := r.Source.Client.Database(r.Database).RunCommand(nil,
-		bson.D{{"collStats", r.Collection}}).Decode(&res); err != nil {
+	count, err := mong.GetCollectionStats(r.Source, r.Database, r.Collection)
+	if err != nil {
 		log.Error("Error getting collection stats: ", err)
 		return err
 	}
 
-	count := uint64(res.Count)
 	r.Progress.SetTotal(count)
 	log.InfoWithFields("Collection stats", log.Fields{
 		"collection": r.Collection,

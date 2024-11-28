@@ -11,9 +11,8 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 )
 
-func StartFullReplication(ctx context.Context, checkpointManager checkpoint.CheckpointManager) {
-
-	// TODO Get the list of databases from replica set rather than from the configuration
+func StartFullReplication(ctx context.Context, checkpointManager checkpoint.CheckpointManager,
+	dbAndCollections map[string][]string) {
 
 	// Keep track of the max timestamp for each collection
 	// var ckptMap map[string]TimestampNode
@@ -25,20 +24,13 @@ func StartFullReplication(ctx context.Context, checkpointManager checkpoint.Chec
 		log.Fatal("Error computing the last checkpoint: ", err)
 	}
 
-	for _, db := range config.Current.Repl.Databases {
-
-		//TODO Ensure the database exist in the source
-
-		// Get the list of collections to replicate for the database
-		collections, err := mong.ListCollections(ctx, db, mong.Registry.GetSource())
-		if err != nil {
-			log.Fatal("Error getting the list of collections to replicate: ", err)
-		}
+	// Replicate the collections
+	for db, cols := range dbAndCollections {
 
 		// Replicate the collections
 		var wg sync.WaitGroup
 		var replErr error
-		for _, collection := range collections {
+		for _, collection := range cols {
 
 			// Filter the collections to replicate
 			// FilterIn has priority over FilterOut
@@ -88,12 +80,7 @@ func StartFullReplication(ctx context.Context, checkpointManager checkpoint.Chec
 		})
 
 		// As the full replication is finished, we can save the checkpoint
-		checkpointManager.SetCheckpoint(ctx, checkpoint.Checkpoint{
-			Name:      db,
-			LatestTs:  oplogBoundaries.Newest,
-			Latest:    checkpoint.ToDate(oplogBoundaries.Newest),
-			LatestLSN: checkpoint.ToInt64(oplogBoundaries.Newest),
-		}, true)
+		checkpointManager.SetCheckpoint(ctx, oplogBoundaries.Newest, true)
 
 		// ckptMap = map[string]utils.TimestampNode{
 		// 	coordinator.MongoS.ReplicaName: {
@@ -110,12 +97,6 @@ func StartFullReplication(ctx context.Context, checkpointManager checkpoint.Chec
 
 func replicateCollection(ctx context.Context, database string, collection string) error {
 
-	// TODO Recreate the index from source to target
-
-	// TODO Create a channel to sync between the reader and the writer ?
-
-	// At the moment, I am not sure if I should use a channel to sync between the reader and the writer
-	// So I will just pass the writer to the reader. This way, the reader can write the documents directly.
 	writer := NewDocumentWriter(database, collection, mong.Registry.GetTarget())
 	reader := NewDocumentReader(database, collection, mong.Registry.GetSource(),
 		config.Current.Repl.Full.BatchSize, writer)

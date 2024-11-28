@@ -7,5 +7,4 @@ scrape_configs:
     metrics_path: /metrics
     scheme: http
     static_configs:
-      # Replace me
-      - targets: ["localhost:3000"]
+      - targets: ["cachedb120k:3000"]

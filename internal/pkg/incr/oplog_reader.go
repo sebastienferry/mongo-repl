@@ -165,7 +165,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 				}
 
 				// Filter out unwanted operations
-				if keep, ok := FilteredOperations[l.Operation]; ok && !keep {
+				if !FilteredOperations[l.Operation] {
 					continue
 				}
 

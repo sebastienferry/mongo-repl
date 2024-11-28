@@ -16,6 +16,14 @@ import (
 
 func main() {
 
+	// Load the configuration
+	err := config.Current.LoadConfig()
+	if err != nil {
+		log.Fatal("Error loading configuration: ", err)
+	}
+	log.Debug("Configuration loaded")
+	config.Current.LogConfig()
+
 	// Logger initiatilization
 	level := log.FromString(config.Current.Logging.Level)
 	log.SetLogLevel(level)
@@ -25,14 +33,6 @@ func main() {
 	})
 	log.Debug("Starting mongo-repl")
 	log.Debug(fmt.Sprintf("log level: %i (%s)", level, config.Current.Logging.Level))
-
-	// Load the configuration
-	err := config.Current.LoadConfig()
-	if err != nil {
-		log.Fatal("Error loading configuration: ", err)
-	}
-	log.Debug("Configuration loaded")
-	config.Current.LogConfig()
 
 	// Start the API server
 	go api.StartApi()

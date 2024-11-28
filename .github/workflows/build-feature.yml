@@ -3,7 +3,7 @@ on:
   # Run this workflow only for commits to the main branch or when a PR is merged to the main branch
   push:
     branches:
-      - "feature/*" # Run this workflow for all branches starting with "feature/"
+      - "*" # Run this workflow for all branches
   
 jobs:
   build-main:

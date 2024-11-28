@@ -11,7 +11,8 @@ parent_dir=$(dirname "$current_dir")
 # - TARGET: mongodb://<mongo_uri>:27017/?replicaSet=<replica_set>
 # Run the docker container
 docker run -it --rm \
+--name mongo-repl \
 -p 3000:3000 \
 --mount type=bind,source=$parent_dir/conf/config.dev.yaml,target=/app/conf.yaml,readonly \
---env-file $parent_dir/conf/.env \
-sebastienferry/mongo-repl:v0.0.8
+--env-file $parent_dir/conf/.env -d \
+sebastienferry/mongo-repl:v0.0.12

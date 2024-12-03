@@ -16,11 +16,10 @@ import (
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -79,13 +78,17 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 			}
 
 			// Try to get the object id
-			id, _ := GetObjectId(l.Object)
-			if id.IsZero() && len(l.Query) > 0 {
-				id = GetKey(l.Query, "_id").(primitive.ObjectID)
+			var id interface{}
+			if l.Operation != "c" {
+				pid, _ := GetObjectId(l.Object)
+				if pid.IsZero() && len(l.Query) > 0 {
+					id = GetKey(l.Query, "_id")
+				} else {
+					id = pid
+				}
+				// Display some debug information
+				debugLog(id, &l.ParsedLog)
 			}
-
-			// Display some debug information
-			debugLog(id, &l.ParsedLog)
 
 			// Handle the operation
 			var opErr error = nil
@@ -96,6 +99,8 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 				opErr = ow.Update(l, true)
 			case "d":
 				opErr = ow.Delete(l)
+			case "c":
+				opErr = ow.Command(l)
 			}
 
 			// Check for errors
@@ -123,7 +128,7 @@ func (ow *OplogWriterSingle) StartWriter(ctx context.Context) {
 func (ow *OplogWriterSingle) Insert(l *oplog.ChangeLog) error {
 
 	// DB Connection
-	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
 
 	// Insert the document
 	if _, err := collectionHandle.InsertOne(context.Background(), l.ParsedLog.Object); err != nil {
@@ -143,7 +148,7 @@ func (ow *OplogWriterSingle) Insert(l *oplog.ChangeLog) error {
 func (sw *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
-	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
 
 	var id interface{}
 	var update interface{} = bson.D{{"$set", l.ParsedLog.Object}}
@@ -204,7 +209,7 @@ func (sw *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 func (ow *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
-	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
 
 	var err error
 	var res *mongo.UpdateResult
@@ -270,11 +275,33 @@ func (ow *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 }
 
 func (ow *OplogWriterSingle) Delete(l *oplog.ChangeLog) error {
-	collectionHandle := mong.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
 	_, err := collectionHandle.DeleteOne(context.Background(), l.ParsedLog.Object)
 	if err != nil {
 		log.ErrorWithFields(DeleteError, log.Fields{"err": err})
 		return err
+	}
+	return nil
+}
+
+func (ow *OplogWriterSingle) Command(l *oplog.ChangeLog) error {
+
+	// Extract the sub-command
+	if command, found := ExtraCommandName(l.ParsedLog.Object); found && IsSyncDataCommand(command) {
+
+		var err error
+		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().Client); err == nil {
+			log.InfoWithFields("execute cmd operation", log.Fields{"op": "c", "command": command})
+		} else if err.Error() == "ns not found" {
+			log.InfoWithFields("execute cmd operation, ignore error", log.Fields{"op": "c", "command": command})
+		} else if IgnoreError(err, "c", checkpoint.ToInt64(l.Timestamp) <= ow.fullFinishTs) {
+			return nil
+		} else {
+			return err
+		}
+
+	} else {
+		log.WarnWithFields("execute cmd operation, command not found", log.Fields{"op": "c", "command": command})
 	}
 	return nil
 }
@@ -325,8 +352,8 @@ func IgnoreError(err error, op string, isFullSyncStage bool) bool {
 	return false
 }
 
-func debugLog(id primitive.ObjectID, l *oplog.ParsedLog) {
-	log.DebugWithFields("OPLOG entry: ", log.Fields{
+func debugLog(id interface{}, l *oplog.ParsedLog) {
+	log.DebugWithFields("OPLOG", log.Fields{
 		"ns": l.Namespace,
 		"op": l.Operation,
 		"ts": l.Timestamp,

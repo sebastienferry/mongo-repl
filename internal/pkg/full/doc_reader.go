@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -18,7 +18,7 @@ type DocumentReader struct {
 	// The batch size
 	Batch int
 	// The source database
-	Source *mong.Mong
+	Source *mdb.Mong
 	// The document writer
 	Writer *DocumentWriter
 	// Progression state
@@ -29,7 +29,7 @@ const (
 	MAX_BUFFER_BYTE_SIZE = 12 * 1024 * 1024
 )
 
-func NewDocumentReader(database string, collection string, source *mong.Mong, batch int, writer *DocumentWriter) *DocumentReader {
+func NewDocumentReader(database string, collection string, source *mdb.Mong, batch int, writer *DocumentWriter) *DocumentReader {
 	return &DocumentReader{
 		Database:   database,
 		Collection: collection,
@@ -45,7 +45,7 @@ func (r *DocumentReader) StartSync(ctx context.Context) error {
 	log.Info("Start syncing collection ", r.Collection)
 
 	// get total count
-	count, err := mong.GetCollectionStats(r.Source, r.Database, r.Collection)
+	count, err := mdb.GetCollectionStats(r.Source, r.Database, r.Collection)
 	if err != nil {
 		log.Error("Error getting collection stats: ", err)
 		return err

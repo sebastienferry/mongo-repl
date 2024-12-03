@@ -8,8 +8,8 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/full"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/incr"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/stats"
 )
 
@@ -36,7 +36,7 @@ func StartReplication(ctx context.Context) {
 		config.Current.Repl.Incr.State.Collection)
 
 	// Establish the list of dbAndCollections to replicate
-	dbAndCollections, err := mong.ListDbCollections(ctx, config.Current.Repl.Databases)
+	dbAndCollections, err := mdb.ListDbCollections(ctx, config.Current.Repl.Databases)
 	if err != nil {
 		log.Fatal("Error getting the list of collections to replicate: ", err)
 	}

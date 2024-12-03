@@ -8,7 +8,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 )
 
 func StartFullReplication(ctx context.Context, checkpointManager checkpoint.CheckpointManager,
@@ -97,8 +97,8 @@ func StartFullReplication(ctx context.Context, checkpointManager checkpoint.Chec
 
 func replicateCollection(ctx context.Context, database string, collection string) error {
 
-	writer := NewDocumentWriter(database, collection, mong.Registry.GetTarget())
-	reader := NewDocumentReader(database, collection, mong.Registry.GetSource(),
+	writer := NewDocumentWriter(database, collection, mdb.Registry.GetTarget())
+	reader := NewDocumentReader(database, collection, mdb.Registry.GetSource(),
 		config.Current.Repl.Full.BatchSize, writer)
 
 	// Keep track of the progress for reporting

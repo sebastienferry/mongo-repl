@@ -7,8 +7,8 @@ import (
 
 	health "github.com/hellofresh/health-go/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 )
 
 func StartApi() {
@@ -28,12 +28,12 @@ func CreateHealthCheckHandler() http.Handler {
 			Timeout:   time.Second * 5,
 			SkipOnErr: true,
 			Check: func(ctx context.Context) error {
-				return mong.Registry.GetSource().Client.Ping(ctx, nil)
+				return mdb.Registry.GetSource().Client.Ping(ctx, nil)
 			}},
 		health.Config{
 			Name: "mongodb-target",
 			Check: func(ctx context.Context) error {
-				return mong.Registry.GetTarget().Client.Ping(ctx, nil)
+				return mdb.Registry.GetTarget().Client.Ping(ctx, nil)
 			},
 		},
 	))

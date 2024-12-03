@@ -12,6 +12,8 @@ type GenericOplog struct {
 	Parsed *ChangeLog
 }
 
+// https://github.com/mongodb/mongo/blob/r6.2.0/src/mongo/db/repl/oplog_entry.idl
+
 type ChangeLog struct {
 	ParsedLog
 
@@ -51,6 +53,12 @@ type ParsedLog struct {
 type GenericObject struct {
 	// The object id
 	Id primitive.ObjectID `bson:"_id" json:"_id omitempty"`
+}
+
+// Split the namespace to get the collection name
+// namespace = "whatever.$cmd"
+func ParseCmd(namespace string) (string, string) {
+	return GetDbAndCollection(namespace)
 }
 
 // Split the namespace to get the database name

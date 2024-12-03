@@ -9,6 +9,31 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+type CommandOperation struct {
+	concernSyncData bool
+	runOnAdmin      bool // some commands like `renameCollection` need run on admin database
+	needFilter      bool // should be ignored in shake
+}
+
+var opsMap = map[string]*CommandOperation{
+	"create":           {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"createIndexes":    {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"collMod":          {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"dropDatabase":     {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"drop":             {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"deleteIndex":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"deleteIndexes":    {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"dropIndex":        {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"dropIndexes":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"renameCollection": {concernSyncData: false, runOnAdmin: true, needFilter: false},
+	"convertToCapped":  {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"emptycapped":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"applyOps":         {concernSyncData: true, runOnAdmin: false, needFilter: false},
+	"startIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
+	"commitIndexBuild": {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"abortIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
+}
+
 func GetObjectId(log bson.D) (primitive.ObjectID, error) {
 	for _, bsonE := range log {
 		if bsonE.Key == "_id" {
@@ -31,7 +56,7 @@ func FindFiledPrefix(input bson.D, prefix string) bool {
 }
 
 // pay attention: the input bson.D will be modified.
-func RemoveFiled(input bson.D, key string) bson.D {
+func RemoveField(input bson.D, key string) bson.D {
 	flag := -1
 	for id := range input {
 		if input[id].Key == key {
@@ -86,6 +111,14 @@ func GetKeyWithIndex(log bson.D, wanted string) (interface{}, int) {
 	}
 
 	return nil, 0
+}
+
+func GetId(log bson.D) (primitive.ObjectID, error) {
+	oid := GetKey(log, "_id")
+	if oid == nil {
+		return primitive.ObjectID{}, fmt.Errorf("No ObjectID found")
+	}
+	return oid.(primitive.ObjectID), nil
 }
 
 func BuildUpdateDelteOplog(prefixField string, obj bson.D) (interface{}, error) {
@@ -178,4 +211,49 @@ func combinePrefixField(prefixField string, obj interface{}) interface{} {
 	}
 
 	return result
+}
+
+func ExtraCommandName(o bson.D) (string, bool) {
+	// command name must be at the first position
+	if len(o) > 0 {
+		if _, exist := opsMap[o[0].Key]; exist {
+			return o[0].Key, true
+		}
+	}
+
+	return "", false
+}
+
+func IsSyncDataCommand(command string) bool {
+	if op, ok := opsMap[strings.TrimSpace(command)]; ok {
+		return op.concernSyncData
+	}
+	return false
+}
+
+func IsRunOnAdminCommand(operation string) bool {
+	if op, ok := opsMap[strings.TrimSpace(operation)]; ok {
+		return op.runOnAdmin
+	}
+	return false
+}
+
+func IsNeedFilterCommand(operation string) bool {
+	if op, ok := opsMap[strings.TrimSpace(operation)]; ok {
+		return op.needFilter
+	}
+	return false
+}
+
+func ApplyOpsFilter(key string) bool {
+	// convert to map if has more later
+	k := strings.TrimSpace(key)
+	if k == "$db" {
+		// 40621, $db is not allowed in OP_QUERY requests
+		return true
+	} else if k == "ui" {
+		return true
+	}
+
+	return false
 }

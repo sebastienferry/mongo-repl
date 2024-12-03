@@ -7,8 +7,8 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -74,7 +74,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 			// Get the oplog cursor
 			filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
-			cur, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
 			if err != nil {
 				log.Error("Error getting oplog cursor: ", err)
 				time.Sleep(CursorWaitTime)
@@ -107,55 +107,73 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					continue
 				}
 
-				// Get the database and collection
-				db, coll := oplog.GetDbAndCollection(l.Namespace)
-
-				// Filter out unwanted operations
-				if !o.oplogFilter.KeepOperation(l.Operation) || !o.oplogFilter.KeepCollection(db, coll) {
+				if !o.oplogFilter.KeepOperation(l.Operation) {
 					continue
 				}
 
-				// // Try to get the object id
-				// var id primitive.ObjectID
-				// if config.Current.Logging.Level == log.DebugLevel {
-				// 	for _, bsonE := range l.Object {
-				// 		if bsonE.Key == "_id" {
-				// 			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
-				// 				id = oid
-				// 			}
-				// 		}
-				// 	}
-				// }
+				// Filter out unwanted operations
+				var db, coll string
+				if l.Operation == "c" {
+					// Collection is not what you think it is for commands
+					// The command would "admin.$cmd" for example
+					// The real collection is store in the "ns" field for sub-entries of the command
+					db, coll = oplog.GetDbAndCollection(l.Namespace)
 
-				// log.DebugWithFields("OPLOG entry: ", log.Fields{
-				// 	"ns": l.Namespace,
-				// 	"op": l.Operation,
-				// 	"ts": l.Timestamp,
-				// 	"id": id,
-				// })
+					// Filter out unwanted collections
+					if command, found := ExtraCommandName(l.Object); found && IsSyncDataCommand(command) {
 
-				// Process the oplog entry
-				queuedLogs <- &oplog.ChangeLog{
-					ParsedLog:  l,
-					Db:         db,
-					Collection: coll,
+						cmd := l.Object
+						filteredCmd, keep := FilterCmd(cmd, func(doc bson.D) bool {
+							ns := GetKey(doc, "ns")
+							db, coll = oplog.GetDbAndCollection(ns.(string))
+							return o.oplogFilter.KeepCollection(db, coll)
+						})
+
+						if keep {
+							l.Object = filteredCmd
+							queuedLogs <- &oplog.ChangeLog{
+								ParsedLog:  l,
+								Db:         db,
+								Collection: coll,
+							}
+
+							// Determine the latest timestamp
+							latestTs = l.Timestamp
+
+							// TODO: Should we increment by the number of sub-commands?
+							metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
+						}
+
+					} else {
+						// We are not interested in this command
+						// Yet we still need to update the checkpoint
+						// TODO: Check if we need to update the checkpoint
+						continue
+					}
+
+				} else {
+					// Get the database and collection
+					db, coll = oplog.GetDbAndCollection(l.Namespace)
+
+					// Check if we should replicate the command
+					if !o.oplogFilter.KeepCollection(db, coll) {
+						continue
+					}
+
+					// Process the oplog entry
+					queuedLogs <- &oplog.ChangeLog{
+						ParsedLog:  l,
+						Db:         db,
+						Collection: coll,
+					}
+					latestTs = l.Timestamp
+					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 				}
-				latestTs = l.Timestamp
-				metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 			}
 
 			// Release the cursor
 			cur.Close(context.Background())
 			time.Sleep(CursorWaitTime)
-
-			// Refresh the latest timestamp from the checkpoint stored in the DB
-			// Every minute, we will refresh the latest timestamp from the checkpoint stored in the DB
-			// savedTs, err := o.ckptManager.GetCheckpoint(context.Background())
-			// if err != nil {
-			// 	log.Error("Error getting the latest checkpoint: ", err)
-			// } else {
-			// 	latestTs = savedTs.LatestTs
-			// }
 		}
 	}()
 }

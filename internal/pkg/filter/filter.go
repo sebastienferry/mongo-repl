@@ -12,13 +12,13 @@ func NewFilter() *Filter {
 	return &Filter{
 		filteredOperations: map[string]bool{
 			"n":  true, // no-op
-			"c":  true, // command
 			"db": true, // database
 
 			// Keep the following operations
 			"u": false, // update
 			"d": false, // delete
 			"i": false, // insert
+			"c": false, // command
 		},
 	}
 }

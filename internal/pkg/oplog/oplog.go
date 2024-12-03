@@ -7,6 +7,15 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+const (
+	NoOp      = "n"  // NoOp operation
+	DbOp      = "db" // Database operation
+	UpdateOp  = "u"  // Update operation
+	DeleteOp  = "d"  // Delete operation
+	InsertOp  = "i"  // Insert operation
+	CommandOp = "c"  // Command operation
+)
+
 type GenericOplog struct {
 	Raw    []byte
 	Parsed *ChangeLog

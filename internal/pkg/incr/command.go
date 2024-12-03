@@ -9,40 +9,29 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
-const UUID = "ui"
+const (
+	Uuid     = "ui"
+	ApplyOps = "applyOps"
+)
 
-func FilterCmd(cmd primitive.D, filter func(bson.D) bool) (primitive.D, bool) {
-	for _, ele := range cmd {
-
-		// applyOps has the following structure:
-		// { "applyOps" : [
-		//		{ "op" : "i", "ns" : "test.car", "ui" : UUID("617ffe90-6dac-4e71-b570-1825422c1896"), "o" : { "_id" : ObjectId("62d1f7b3b3f1b3b3b3f1b3b3"), "name" : "car" }},
-		// ]}	{ "op" : "i", "ns" : "test.car", "ui" : UUID("617ffe90-6dac-4e71-b570-1825422c1896"), "o" : { "_id" : ObjectId("62d1f7b3b3f1b3b3b3f1b3b3"), "name" : "car" }}
-		//]}
-		if ele.Key == "applyOps" {
-			switch subOps := ele.Value.(type) {
-			case bson.A:
-				var j = 0
-				for _, subOp := range subOps {
-					doc := subOp.(bson.D)
-					if !filter(doc) {
-						continue
-					}
-					subOps[j] = doc
-					j++
-				}
-				// return with the new slice
-				if j <= 0 {
-					return nil, false
-				}
-
-				return primitive.D{
-					{Key: ele.Key, Value: subOps[:j]},
-				}, true
+func FilterApplyOps(ele primitive.E, filter func(primitive.D) bool, filteredCmd primitive.D, count int) (primitive.D, int) {
+	switch subOps := ele.Value.(type) {
+	case bson.A:
+		var j = 0
+		for _, subOp := range subOps {
+			doc := subOp.(bson.D)
+			if !filter(doc) {
+				continue
 			}
+			subOps[j] = doc
+			j++
+		}
+		if j > 0 {
+			filteredCmd = append(filteredCmd, primitive.E{Key: ele.Key, Value: subOps[:j]})
+			count++
 		}
 	}
-	return nil, false
+	return filteredCmd, count
 }
 
 func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Client) error {
@@ -74,17 +63,17 @@ func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Clie
 
 						//TODO: Filter out the unwated collection.
 
-						v[i] = RemoveField(doc, UUID)
+						v[i] = RemoveField(doc, Uuid)
 					}
 				case []interface{}:
 					for i, ele := range v {
 						doc := ele.(bson.D)
-						v[i] = RemoveField(doc, UUID)
+						v[i] = RemoveField(doc, Uuid)
 					}
 				case bson.D:
 					ret := make(bson.D, 0, len(v))
 					for _, ele := range v {
-						if ele.Key == UUID {
+						if ele.Key == Uuid {
 							continue
 						}
 						ret = append(ret, ele)
@@ -92,7 +81,7 @@ func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Clie
 					ele.Value = ret
 				case []bson.M:
 					for _, ele := range v {
-						delete(ele, UUID)
+						delete(ele, Uuid)
 					}
 				}
 

@@ -2,6 +2,7 @@ package filter
 
 import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 )
 
 type Filter struct {
@@ -11,14 +12,14 @@ type Filter struct {
 func NewFilter() *Filter {
 	return &Filter{
 		filteredOperations: map[string]bool{
-			"n":  true, // no-op
-			"db": true, // database
+			oplog.NoOp: true, // no-op
+			oplog.DbOp: true, // database
 
 			// Keep the following operations
-			"u": false, // update
-			"d": false, // delete
-			"i": false, // insert
-			"c": false, // command
+			oplog.UpdateOp:  false, // update
+			oplog.DeleteOp:  false, // delete
+			oplog.InsertOp:  false, // insert
+			oplog.CommandOp: false, // command
 		},
 	}
 }

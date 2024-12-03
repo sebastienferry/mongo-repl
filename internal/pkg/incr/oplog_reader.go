@@ -11,6 +11,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -113,31 +114,49 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 				// Filter out unwanted operations
 				var db, coll string
-				if l.Operation == "c" {
-					// Collection is not what you think it is for commands
-					// The command would "admin.$cmd" for example
-					// The real collection is store in the "ns" field for sub-entries of the command
+				if l.Operation == oplog.CommandOp {
+
+					// Namespace is not what you think it is for "c" operations
+					// It would be "admin.$cmd", the real collection is store in
+					// the "ns" field for sub-entries of the command
 					db, coll = oplog.GetDbAndCollection(l.Namespace)
 
-					// Filter out unwanted collections
+					// Filter out unwanted commands
 					if command, found := ExtraCommandName(l.Object); found && IsSyncDataCommand(command) {
 
 						cmd := l.Object
-						filteredCmd, keep := FilterCmd(cmd, func(doc bson.D) bool {
-							ns := GetKey(doc, "ns")
-							db, coll = oplog.GetDbAndCollection(ns.(string))
-							return o.oplogFilter.KeepCollection(db, coll)
-						})
+						computedCmd := primitive.D{}
+						computedCmdSize := 0
 
-						if keep {
-							l.Object = filteredCmd
+						// A command is a map of sub-commands
+						for _, ele := range cmd {
+							switch ele.Key {
+
+							// ApplyOps is a special command that contains a list of sub-commands
+							// We should filter out the unwanted sub-commands on the operation and namespace
+							case ApplyOps:
+								computedCmd, computedCmdSize = FilterApplyOps(ele, func(doc bson.D) bool {
+									ns := GetKey(doc, "ns")
+									db, coll = oplog.GetDbAndCollection(ns.(string))
+									op := GetKey(doc, "op").(string)
+
+									// TODO We probably don't to handle other cases that are not "i", "u", "d"
+									return o.oplogFilter.KeepCollection(db, coll) && o.oplogFilter.KeepOperation(op)
+
+								}, computedCmd, computedCmdSize)
+							}
+						}
+
+						if computedCmdSize > 0 {
+							// Replace the command with the filtered one
+							l.Object = computedCmd
 							queuedLogs <- &oplog.ChangeLog{
 								ParsedLog:  l,
 								Db:         db,
 								Collection: coll,
 							}
 
-							// Determine the latest timestamp
+							// Update the checkpoint
 							latestTs = l.Timestamp
 
 							// TODO: Should we increment by the number of sub-commands?

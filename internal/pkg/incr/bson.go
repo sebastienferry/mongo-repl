@@ -17,7 +17,7 @@ type CommandOperation struct {
 
 var opsMap = map[string]*CommandOperation{
 	"create":           {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"createIndexes":    {concernSyncData: false, runOnAdmin: false, needFilter: false},
+	"createIndexes":    {concernSyncData: true, runOnAdmin: false, needFilter: false},
 	"collMod":          {concernSyncData: false, runOnAdmin: false, needFilter: false},
 	"dropDatabase":     {concernSyncData: false, runOnAdmin: false, needFilter: false},
 	"drop":             {concernSyncData: false, runOnAdmin: false, needFilter: false},
@@ -32,6 +32,15 @@ var opsMap = map[string]*CommandOperation{
 	"startIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
 	"commitIndexBuild": {concernSyncData: false, runOnAdmin: false, needFilter: false},
 	"abortIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
+}
+
+var AllowedOperation = map[string]bool{
+	"applyOps":         true,
+	"startIndexBuild":  true,
+	"commitIndexBuild": true,
+	"abortIndexBuild":  true,
+	"dropIndex":        false,
+	"dropIndexes":      true,
 }
 
 func GetObjectId(log bson.D) (primitive.ObjectID, error) {
@@ -224,7 +233,7 @@ func ExtraCommandName(o bson.D) (string, bool) {
 	return "", false
 }
 
-func IsSyncDataCommand(command string) bool {
+func KeepOperation(command string) bool {
 	if op, ok := opsMap[strings.TrimSpace(command)]; ok {
 		return op.concernSyncData
 	}

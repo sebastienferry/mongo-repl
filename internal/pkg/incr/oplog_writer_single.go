@@ -287,7 +287,7 @@ func (ow *OplogWriterSingle) Delete(l *oplog.ChangeLog) error {
 func (ow *OplogWriterSingle) Command(l *oplog.ChangeLog) error {
 
 	// Extract the sub-command
-	if command, found := ExtraCommandName(l.ParsedLog.Object); found && IsSyncDataCommand(command) {
+	if command, found := ExtraCommandName(l.ParsedLog.Object); found && KeepOperation(command) {
 
 		var err error
 		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().Client); err == nil {

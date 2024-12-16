@@ -74,8 +74,9 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 			}
 
 			// Get the oplog cursor
-			filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
-			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+
+			filterOnTs := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
+			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, findOptions)
 			if err != nil {
 				log.Error("Error getting oplog cursor: ", err)
 				time.Sleep(CursorWaitTime)
@@ -122,7 +123,9 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					db, coll = oplog.GetDbAndCollection(l.Namespace)
 
 					// Filter out unwanted commands
-					if command, found := ExtraCommandName(l.Object); found && IsSyncDataCommand(command) {
+					command, found := ExtraCommandName(l.Object)
+					log.Debug("Command: ", command)
+					if found && KeepOperation(command) {
 
 						cmd := l.Object
 						computedCmd := primitive.D{}
@@ -135,15 +138,9 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 							// ApplyOps is a special command that contains a list of sub-commands
 							// We should filter out the unwanted sub-commands on the operation and namespace
 							case ApplyOps:
-								computedCmd, computedCmdSize = FilterApplyOps(ele, func(doc bson.D) bool {
-									ns := GetKey(doc, "ns")
-									db, coll = oplog.GetDbAndCollection(ns.(string))
-									op := GetKey(doc, "op").(string)
-
-									// TODO We probably don't to handle other cases that are not "i", "u", "d"
-									return o.oplogFilter.KeepCollection(db, coll) && o.oplogFilter.KeepOperation(op)
-
-								}, computedCmd, computedCmdSize)
+								computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
+							default:
+								log.Info("Unknown command: ", ele.Key)
 							}
 						}
 

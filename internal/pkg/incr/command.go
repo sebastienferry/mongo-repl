@@ -1,6 +1,8 @@
 package incr
 
 import (
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
@@ -14,24 +16,48 @@ const (
 	ApplyOps = "applyOps"
 )
 
-func FilterApplyOps(ele primitive.E, filter func(primitive.D) bool, filteredCmd primitive.D, count int) (primitive.D, int) {
+// Filter an applyOps command sub-operations
+func FilterApplyOps(ele primitive.E, keepSubOp func(primitive.D) bool, computedCmd primitive.D, computedCmdSize int) (primitive.D, int) {
+	var j = 0
 	switch subOps := ele.Value.(type) {
 	case bson.A:
-		var j = 0
 		for _, subOp := range subOps {
 			doc := subOp.(bson.D)
-			if !filter(doc) {
+			if !keepSubOp(doc) {
 				continue
 			}
 			subOps[j] = doc
 			j++
 		}
 		if j > 0 {
-			filteredCmd = append(filteredCmd, primitive.E{Key: ele.Key, Value: subOps[:j]})
-			count++
+			computedCmd = append(computedCmd, primitive.E{Key: ele.Key, Value: subOps[:j]})
+			computedCmdSize += j
 		}
 	}
-	return filteredCmd, count
+	return computedCmd, computedCmdSize
+}
+
+// Check if a sub-operation from an applyOps command should be kept
+// We only keep insert, update and delete operations
+// We also apply filter on the namespace
+func KeepSubOp(doc bson.D) bool {
+
+	// Filter the op
+	op := GetKey(doc, "op").(string)
+	allowed, found := filter.Lookup(filter.AllowedOperationsForApplyOps, op)
+	if !found || !allowed {
+		return false
+	}
+
+	// Filter the namespace
+	ns := GetKey(doc, "ns")
+	subDb, subColl := oplog.GetDbAndCollection(ns.(string))
+
+	return filter.ShouldReplicateNamespace(
+		config.Current.Repl.DatabasesIn,
+		config.Current.Repl.FiltersIn,
+		config.Current.Repl.FiltersOut,
+		subDb, subColl)
 }
 
 func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Client) error {

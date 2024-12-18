@@ -2,6 +2,7 @@ package incr
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
@@ -139,8 +140,14 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 							// We should filter out the unwanted sub-commands on the operation and namespace
 							case ApplyOps:
 								computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
+							case "startBuildIndex":
+								continue
+							case "commitIndexBuild":
+								computedCmd = cmd
 							default:
 								log.Info("Unknown command: ", ele.Key)
+								jsonCmd, _ := json.Marshal(l)
+								log.Info("Command: " + string(jsonCmd))
 							}
 						}
 
@@ -152,18 +159,25 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 								Db:         db,
 								Collection: coll,
 							}
-
-							// Update the checkpoint
-							latestTs = l.Timestamp
-
-							// TODO: Should we increment by the number of sub-commands?
-							metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 						}
+
+						queuedLogs <- &oplog.ChangeLog{
+							ParsedLog:  l,
+							Db:         db,
+							Collection: coll,
+						}
+
+						// Update the checkpoint
+						latestTs = l.Timestamp
+
+						// TODO: Should we increment by the number of sub-commands?
+						metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 
 					} else {
 						// We are not interested in this command
 						// Yet we still need to update the checkpoint
 						// TODO: Check if we need to update the checkpoint
+						log.Debug("Unwanted command: ", command)
 						continue
 					}
 

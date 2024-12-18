@@ -2,7 +2,7 @@
 # level are panic, fatal, error, warn, info, debug
 # If you want, you can override this configuration using the environment variable LOG_LEVEL
 logging:
-  level: info
+  level: debug
 
 # Define the replication
 repl:
@@ -21,7 +21,6 @@ repl:
   # Define the database to replicate
   databases:
     - Animals
-    - Plants
 
   # Filter the collections to include or exclude.
   # If both are defined, the filter_in will have the priority.
@@ -42,5 +41,5 @@ repl:
   incr:
     # Define where to store the replication state for the oplog
     state:
-      db: MongoRepl
+      db: Animals
       collection: _repl

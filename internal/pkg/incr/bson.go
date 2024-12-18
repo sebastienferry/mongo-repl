@@ -15,23 +15,23 @@ type CommandOperation struct {
 	needFilter      bool // should be ignored in shake
 }
 
-var opsMap = map[string]*CommandOperation{
-	"create":           {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"createIndexes":    {concernSyncData: true, runOnAdmin: false, needFilter: false},
-	"collMod":          {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"dropDatabase":     {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"drop":             {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"deleteIndex":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"deleteIndexes":    {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"dropIndex":        {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"dropIndexes":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"renameCollection": {concernSyncData: false, runOnAdmin: true, needFilter: false},
-	"convertToCapped":  {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"emptycapped":      {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"applyOps":         {concernSyncData: true, runOnAdmin: false, needFilter: false},
-	"startIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
-	"commitIndexBuild": {concernSyncData: false, runOnAdmin: false, needFilter: false},
-	"abortIndexBuild":  {concernSyncData: false, runOnAdmin: false, needFilter: true},
+var opsMap = map[string]bool{
+	"create":           false,
+	"createIndexes":    false,
+	"collMod":          false,
+	"dropDatabase":     false,
+	"drop":             false,
+	"deleteIndex":      false,
+	"deleteIndexes":    false,
+	"dropIndex":        true,
+	"dropIndexes":      true,
+	"renameCollection": false,
+	"convertToCapped":  false,
+	"emptycapped":      false,
+	"applyOps":         true,
+	"startIndexBuild":  false,
+	"commitIndexBuild": true,
+	"abortIndexBuild":  false,
 }
 
 var AllowedOperation = map[string]bool{
@@ -234,22 +234,8 @@ func ExtraCommandName(o bson.D) (string, bool) {
 }
 
 func KeepOperation(command string) bool {
-	if op, ok := opsMap[strings.TrimSpace(command)]; ok {
-		return op.concernSyncData
-	}
-	return false
-}
-
-func IsRunOnAdminCommand(operation string) bool {
-	if op, ok := opsMap[strings.TrimSpace(operation)]; ok {
-		return op.runOnAdmin
-	}
-	return false
-}
-
-func IsNeedFilterCommand(operation string) bool {
-	if op, ok := opsMap[strings.TrimSpace(operation)]; ok {
-		return op.needFilter
+	if keep, ok := AllowedOperation[strings.TrimSpace(command)]; ok {
+		return keep
 	}
 	return false
 }

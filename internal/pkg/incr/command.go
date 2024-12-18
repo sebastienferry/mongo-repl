@@ -1,6 +1,8 @@
 package incr
 
 import (
+	"context"
+
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
@@ -60,6 +62,96 @@ func KeepSubOp(doc bson.D) bool {
 		subDb, subColl)
 }
 
+func RunCommandApplyOps(database string, l *oplog.ChangeLog, client *mongo.Client) error {
+	/*
+	 * Strictly speaking, we should handle applysOps nested case, but it is
+	 * complicate to fulfill, so we just use "applyOps" to run the command directly.
+	 */
+	var store bson.D
+	for _, ele := range l.Object {
+		if ApplyOpsFilter(ele.Key) {
+			continue
+		}
+		if ele.Key == "applyOps" {
+			switch v := ele.Value.(type) {
+			case bson.A:
+				for i, ele := range v {
+					doc := ele.(bson.D)
+
+					//TODO: Filter out the unwated collection.
+
+					v[i] = RemoveField(doc, Uuid)
+				}
+			case []interface{}:
+				for i, ele := range v {
+					doc := ele.(bson.D)
+					v[i] = RemoveField(doc, Uuid)
+				}
+			case bson.D:
+				ret := make(bson.D, 0, len(v))
+				for _, ele := range v {
+					if ele.Key == Uuid {
+						continue
+					}
+					ret = append(ret, ele)
+				}
+				ele.Value = ret
+			case []bson.M:
+				for _, ele := range v {
+					delete(ele, Uuid)
+				}
+			}
+
+		}
+		store = append(store, ele)
+	}
+	singleResult := mdb.Registry.GetTarget().Client.Database(database).RunCommand(nil, store)
+	raw, _ := singleResult.Raw()
+
+	var content bson.M
+	if raw != nil {
+		content = bson.M{}
+		bson.Unmarshal(raw, &content)
+	}
+
+	if singleResult.Err() != nil {
+		log.ErrorWithFields("Error running applyOps command", log.Fields{"error": singleResult.Err()})
+	} else {
+		log.DebugWithFields("command executed", log.Fields{"command": store, "applied": content["applied"].(int32)})
+	}
+	return singleResult.Err()
+}
+
+// Create indexes on a collection using the createIndexes command
+func RunCommandCreateIndexes(database string, l *oplog.ChangeLog, client *mongo.Client) error {
+
+	log.DebugWithFields("Execute DDL command", log.Fields{"command": "createIndexes"})
+
+	var collection string
+	var indexes bson.A
+	for _, ele := range l.Object {
+
+		if ele.Key == "commitIndexBuild" {
+			collection = ele.Value.(string)
+		}
+
+		if ele.Key == "indexes" {
+			for _, index := range ele.Value.(bson.A) {
+				indexes = append(indexes, index)
+			}
+		}
+	}
+
+	cmd := bson.D{
+		{"createIndexes", collection},
+		{"indexes", indexes},
+	}
+
+	return client.Database(database).RunCommand(context.TODO(), cmd).Err()
+}
+
+// See this documentation for a full list of available commands:
+// https://www.mongodb.com/docs/manual/reference/command/
 func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Client) error {
 
 	log.DebugWithFields("Execute DDL command", log.Fields{"command": command})
@@ -69,65 +161,9 @@ func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Clie
 		// createIndexes command
 		log.Debug("createIndexes command")
 	case "commitIndexBuild":
-		// commitIndexBuild command
-		log.Debug("commitIndexBuild command")
+		RunCommandCreateIndexes(database, l, client)
 	case "applyOps":
-		/*
-		 * Strictly speaking, we should handle applysOps nested case, but it is
-		 * complicate to fulfill, so we just use "applyOps" to run the command directly.
-		 */
-		var store bson.D
-		for _, ele := range l.Object {
-			if ApplyOpsFilter(ele.Key) {
-				continue
-			}
-			if ele.Key == "applyOps" {
-				switch v := ele.Value.(type) {
-				case bson.A:
-					for i, ele := range v {
-						doc := ele.(bson.D)
-
-						//TODO: Filter out the unwated collection.
-
-						v[i] = RemoveField(doc, Uuid)
-					}
-				case []interface{}:
-					for i, ele := range v {
-						doc := ele.(bson.D)
-						v[i] = RemoveField(doc, Uuid)
-					}
-				case bson.D:
-					ret := make(bson.D, 0, len(v))
-					for _, ele := range v {
-						if ele.Key == Uuid {
-							continue
-						}
-						ret = append(ret, ele)
-					}
-					ele.Value = ret
-				case []bson.M:
-					for _, ele := range v {
-						delete(ele, Uuid)
-					}
-				}
-
-			}
-			store = append(store, ele)
-		}
-		singleResult := mdb.Registry.GetTarget().Client.Database(database).RunCommand(nil, store)
-		raw, _ := singleResult.Raw()
-
-		var content bson.M
-		if raw != nil {
-			content = bson.M{}
-			bson.Unmarshal(raw, &content)
-		}
-
-		if singleResult.Err() != nil {
-			log.ErrorWithFields("Error running applyOps command", log.Fields{"error": singleResult.Err()})
-		} else {
-			log.DebugWithFields("command executed", log.Fields{"command": store, "applied": content["applied"].(int32)})
-		}
+		RunCommandApplyOps(database, l, client)
 	case "dropDatabase":
 		// dropDatabase command
 		log.Debug("dropDatabase command")

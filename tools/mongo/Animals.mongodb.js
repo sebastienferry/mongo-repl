@@ -1,5 +1,9 @@
+
 use("Animals");
+db.Vets.insertOne({ name: "Dr. Dolittle", specialty: "Exotic Animals" });
+
 // Insert a list of 10 veterinarians
+use("Animals");
 db.Vets.insertMany([
     { name: "Dr. Dolittle", specialty: "Exotic Animals" },
     { name: "Dr. Pol", specialty: "Farm Animals" },
@@ -13,8 +17,16 @@ db.Vets.insertMany([
     { name: "Dr. Michelle", specialty: "Large Animals" }
 ]);
 
+// Create an index on the specialty field
 use("Animals");
-db.Vets.insertOne({ name: "Dr. Dolittle", specialty: "Exotic Animals" });
+db.Vets.createIndex({ specialty: 1 });
+
+// Create an index on the specialty field
+use("Animals");
+db.Vets.dropIndex("specialty_1");
+
+
+
 
 // Insert a weekly schedule for each veterinarian
 db.Vets.find().forEach(function(vet) {

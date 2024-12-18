@@ -10,7 +10,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/api"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/repl"
 	logrus "github.com/sirupsen/logrus"
 )
@@ -36,7 +36,7 @@ func main() {
 	log.Debug(fmt.Sprintf("log level: %d (%s)", level, config.Current.Logging.Level))
 
 	// Setup mongodb connectivity
-	mong.Registry = mong.NewMongoRegistry(config.Current)
+	mdb.Registry = mdb.NewMongoRegistry(config.Current)
 
 	// Start the API server
 	go api.StartApi()

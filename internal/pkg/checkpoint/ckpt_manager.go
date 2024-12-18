@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -60,7 +60,7 @@ func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error)
 	// 	log.Fatal("Error connecting to the server: ", err)
 	// }
 
-	db := mong.Registry.GetTarget().Client.Database(s.DB)
+	db := mdb.Registry.GetTarget().Client.Database(s.DB)
 	collection := db.Collection(s.Collection)
 
 	filter := bson.M{}
@@ -126,7 +126,7 @@ func (s *MongoCheckpoint) saveCheckpoint(ctx context.Context) error {
 	filter := bson.M{"name": s.Current.Name}
 	update := bson.M{"$set": s.Current}
 
-	_, err := mong.Registry.GetTarget().Client.Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
+	_, err := mdb.Registry.GetTarget().Client.Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
 	if err != nil {
 		log.WarnWithFields("Checkpoint upsert error", log.Fields{
 			"checkpoint": s.Current.Name,

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -39,7 +39,7 @@ func GetReplicasetOplogBoundaries() (TsWindow, error) {
 
 	// Get the most recent timestamp from the oplog
 	var newest primitive.Timestamp = MongoTimestampMin
-	newest, err := getOplogTimestamp(mong.Registry.GetSource().Client, Newest)
+	newest, err := getOplogTimestamp(mdb.Registry.GetSource().Client, Newest)
 	if err != nil {
 		return TsWindow{}, err
 	} else if IsZero(newest) {
@@ -47,7 +47,7 @@ func GetReplicasetOplogBoundaries() (TsWindow, error) {
 	}
 
 	var oldest primitive.Timestamp = MongoTimestampMin
-	oldest, err = getOplogTimestamp(mong.Registry.GetSource().Client, Oldest)
+	oldest, err = getOplogTimestamp(mdb.Registry.GetSource().Client, Oldest)
 	if err != nil {
 		return TsWindow{}, err
 	}

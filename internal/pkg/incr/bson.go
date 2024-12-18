@@ -9,6 +9,40 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
+type CommandOperation struct {
+	concernSyncData bool
+	runOnAdmin      bool // some commands like `renameCollection` need run on admin database
+	needFilter      bool // should be ignored in shake
+}
+
+var opsMap = map[string]bool{
+	"create":           false,
+	"createIndexes":    false,
+	"collMod":          false,
+	"dropDatabase":     false,
+	"drop":             false,
+	"deleteIndex":      false,
+	"deleteIndexes":    false,
+	"dropIndex":        true,
+	"dropIndexes":      true,
+	"renameCollection": false,
+	"convertToCapped":  false,
+	"emptycapped":      false,
+	"applyOps":         true,
+	"startIndexBuild":  false,
+	"commitIndexBuild": true,
+	"abortIndexBuild":  false,
+}
+
+var AllowedOperation = map[string]bool{
+	"applyOps":         true,
+	"startIndexBuild":  true,
+	"commitIndexBuild": true,
+	"abortIndexBuild":  true,
+	"dropIndex":        false,
+	"dropIndexes":      true,
+}
+
 func GetObjectId(log bson.D) (primitive.ObjectID, error) {
 	for _, bsonE := range log {
 		if bsonE.Key == "_id" {
@@ -31,7 +65,7 @@ func FindFiledPrefix(input bson.D, prefix string) bool {
 }
 
 // pay attention: the input bson.D will be modified.
-func RemoveFiled(input bson.D, key string) bson.D {
+func RemoveField(input bson.D, key string) bson.D {
 	flag := -1
 	for id := range input {
 		if input[id].Key == key {
@@ -86,6 +120,14 @@ func GetKeyWithIndex(log bson.D, wanted string) (interface{}, int) {
 	}
 
 	return nil, 0
+}
+
+func GetId(log bson.D) (primitive.ObjectID, error) {
+	oid := GetKey(log, "_id")
+	if oid == nil {
+		return primitive.ObjectID{}, fmt.Errorf("No ObjectID found")
+	}
+	return oid.(primitive.ObjectID), nil
 }
 
 func BuildUpdateDelteOplog(prefixField string, obj bson.D) (interface{}, error) {
@@ -178,4 +220,35 @@ func combinePrefixField(prefixField string, obj interface{}) interface{} {
 	}
 
 	return result
+}
+
+func ExtraCommandName(o bson.D) (string, bool) {
+	// command name must be at the first position
+	if len(o) > 0 {
+		if _, exist := opsMap[o[0].Key]; exist {
+			return o[0].Key, true
+		}
+	}
+
+	return "", false
+}
+
+func KeepOperation(command string) bool {
+	if keep, ok := AllowedOperation[strings.TrimSpace(command)]; ok {
+		return keep
+	}
+	return false
+}
+
+func ApplyOpsFilter(key string) bool {
+	// convert to map if has more later
+	k := strings.TrimSpace(key)
+	if k == "$db" {
+		// 40621, $db is not allowed in OP_QUERY requests
+		return true
+	} else if k == "ui" {
+		return true
+	}
+
+	return false
 }

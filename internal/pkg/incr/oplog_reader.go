@@ -140,9 +140,13 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 							// We should filter out the unwanted sub-commands on the operation and namespace
 							case ApplyOps:
 								computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
-							case "startBuildIndex":
+							case "startIndexBuild":
+							case "indexBuildUUID":
+							case "index":
+							case "indexes":
 								continue
 							case "commitIndexBuild":
+							case "dropIndexes":
 								computedCmd = cmd
 							default:
 								log.Info("Unknown command: ", ele.Key)

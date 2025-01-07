@@ -291,7 +291,7 @@ func (ow *OplogWriterSingle) Command(l *oplog.ChangeLog) error {
 
 		var err error
 		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().Client); err == nil {
-			log.InfoWithFields("execute cmd operation", log.Fields{"op": "c", "command": command})
+			//log.InfoWithFields("execute cmd operation", log.Fields{"op": "c", "command": command})
 		} else if err.Error() == "ns not found" {
 			log.InfoWithFields("execute cmd operation, ignore error", log.Fields{"op": "c", "command": command})
 		} else if IgnoreError(err, "c", checkpoint.ToInt64(l.Timestamp) <= ow.fullFinishTs) {

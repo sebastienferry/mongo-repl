@@ -65,9 +65,12 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 	writer := NewOplogWriter(startingTimestamp.LatestLSN, o.queuedLogs, o.ckptManager)
 	writer.StartWriter(ctx)
+
+	o.Run(findOptions)
 }
 
-func (o *OplogReader) Run() error {
+func (o *OplogReader) Run(findOptions *options.FindOptions) {
+
 	go func() {
 		for {
 
@@ -80,7 +83,6 @@ func (o *OplogReader) Run() error {
 			}
 
 			// Get the oplog cursor
-
 			filterOnTs := bson.D{{"ts", bson.D{{"$gt", o.latestTs}}}}
 			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, findOptions)
 			if err != nil {
@@ -205,7 +207,7 @@ func (o *OplogReader) Run() error {
 						Db:         db,
 						Collection: coll,
 					}
-					latestTs = l.Timestamp
+					o.latestTs = l.Timestamp
 					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 				}
 			}

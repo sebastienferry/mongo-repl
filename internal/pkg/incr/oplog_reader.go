@@ -24,6 +24,8 @@ type OplogReader struct {
 	ckptManager checkpoint.CheckpointManager
 	oplogFilter *filter.Filter
 	done        chan bool
+	latestTs    primitive.Timestamp
+	queuedLogs  chan *oplog.ChangeLog
 }
 
 func NewOplogReader(ckptManager checkpoint.CheckpointManager) *OplogReader {
@@ -57,12 +59,15 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 	//findOptions.SetNoCursorTimeout(true)
 	//findOptions.SetCursorType(options.Tailable)
 	//findOptions.SetSort(bson.D{{"$natural", 1}})
-	latestTs := checkpoint.FromInt64(startingTimestamp.LatestLSN)
 
-	queuedLogs := make(chan *oplog.ChangeLog, 1000)
-	writer := NewOplogWriter(startingTimestamp.LatestLSN, queuedLogs, o.ckptManager)
+	o.latestTs = checkpoint.FromInt64(startingTimestamp.LatestLSN)
+	o.queuedLogs = make(chan *oplog.ChangeLog, 1000)
+
+	writer := NewOplogWriter(startingTimestamp.LatestLSN, o.queuedLogs, o.ckptManager)
 	writer.StartWriter(ctx)
+}
 
+func (o *OplogReader) Run() error {
 	go func() {
 		for {
 
@@ -76,7 +81,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 
 			// Get the oplog cursor
 
-			filterOnTs := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
+			filterOnTs := bson.D{{"ts", bson.D{{"$gt", o.latestTs}}}}
 			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, findOptions)
 			if err != nil {
 				log.Error("Error getting oplog cursor: ", err)
@@ -158,21 +163,21 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 						if computedCmdSize > 0 {
 							// Replace the command with the filtered one
 							l.Object = computedCmd
-							queuedLogs <- &oplog.ChangeLog{
+							o.queuedLogs <- &oplog.ChangeLog{
 								ParsedLog:  l,
 								Db:         db,
 								Collection: coll,
 							}
 						}
 
-						queuedLogs <- &oplog.ChangeLog{
+						o.queuedLogs <- &oplog.ChangeLog{
 							ParsedLog:  l,
 							Db:         db,
 							Collection: coll,
 						}
 
 						// Update the checkpoint
-						latestTs = l.Timestamp
+						o.latestTs = l.Timestamp
 
 						// TODO: Should we increment by the number of sub-commands?
 						metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
@@ -195,7 +200,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					}
 
 					// Process the oplog entry
-					queuedLogs <- &oplog.ChangeLog{
+					o.queuedLogs <- &oplog.ChangeLog{
 						ParsedLog:  l,
 						Db:         db,
 						Collection: coll,

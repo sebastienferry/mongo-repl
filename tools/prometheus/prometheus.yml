@@ -7,4 +7,4 @@ scrape_configs:
     metrics_path: /metrics
     scheme: http
     static_configs:
-      - targets: ["cachedb120k:3000"]
+      - targets: ["host.docker.internal:3000"]

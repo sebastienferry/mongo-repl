@@ -8,7 +8,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -76,8 +76,8 @@ func RunSnapshots(ctx context.Context, checkpointManager checkpoint.CheckpointMa
 
 func RunSnapshot(ctx context.Context, database string, collection string) error {
 
-	writer := NewDocumentWriter(database, collection, mong.Registry.GetTarget())
-	reader := NewDocumentReader(database, collection, mong.Registry.GetSource(),
+	writer := NewDocumentWriter(database, collection, mdb.Registry.GetTarget())
+	reader := NewDocumentReader(database, collection, mdb.Registry.GetSource(),
 		config.Current.Repl.Full.BatchSize, writer)
 
 	// Keep track of the progress for reporting
@@ -106,7 +106,7 @@ func RunSnapshot(ctx context.Context, database string, collection string) error 
 func ReplicateIndexes(ctx context.Context, database string, collection string) error {
 
 	// Get the indexes from the source
-	indexes, err := mong.GetIndexesByDb(ctx, database, collection)
+	indexes, err := mdb.GetIndexesByDb(ctx, database, collection)
 	if err != nil {
 		log.Error("Error getting the indexes: ", err)
 		return err
@@ -142,7 +142,7 @@ func ReplicateIndexes(ctx context.Context, database string, collection string) e
 			Options: opts,
 		}
 
-		coll := mong.Registry.GetTarget().Client.Database(database).Collection(collection)
+		coll := mdb.Registry.GetTarget().Client.Database(database).Collection(collection)
 		newName, err := coll.Indexes().CreateOne(ctx, newIndex)
 		if err != nil {
 			log.Error("Error creating the index: ", err)

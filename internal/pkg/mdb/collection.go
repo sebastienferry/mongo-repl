@@ -1,4 +1,4 @@
-package mong
+package mdb
 
 import (
 	"context"
@@ -16,7 +16,7 @@ var res struct {
 }
 
 // Get statistics of a collection
-func GetStatsByCollection(r *Mong, database, collection string) (uint64, error) {
+func GetStatsByCollection(r *MDB, database, collection string) (uint64, error) {
 	if err := r.Client.Database(database).RunCommand(nil,
 		bson.D{{"collStats", collection}}).Decode(&res); err != nil {
 		log.Error("Error getting collection stats: ", err)
@@ -27,7 +27,7 @@ func GetStatsByCollection(r *Mong, database, collection string) (uint64, error) 
 }
 
 // List the collections of a database
-func GetCollectionsByDb(ctx context.Context, db string, mongo *Mong) ([]string, error) {
+func GetCollectionsByDb(ctx context.Context, db string, mongo *MDB) ([]string, error) {
 
 	// List the collections
 	collections, err := mongo.Client.Database(db).ListCollectionNames(ctx, bson.D{})

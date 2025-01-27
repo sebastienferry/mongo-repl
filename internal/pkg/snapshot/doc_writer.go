@@ -3,7 +3,7 @@ package snapshot
 import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -15,12 +15,12 @@ type DocumentWriter struct {
 	// The name of the collection
 	Collection string
 	// The source database
-	Target *mong.Mong
+	Target *mdb.MDB
 	// Progression state
 	Progress *SyncProgress
 }
 
-func NewDocumentWriter(database string, collection string, target *mong.Mong) *DocumentWriter {
+func NewDocumentWriter(database string, collection string, target *mdb.MDB) *DocumentWriter {
 	return &DocumentWriter{
 		Database:   database,
 		Collection: collection,
@@ -64,7 +64,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (WriteResult, error) {
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	_, err := mong.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
+	_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
 
 	// All documents were successfully written
 	if err == nil {
@@ -85,7 +85,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (WriteResult, error) {
 	var updateModels []mongo.WriteModel
 	for _, wError := range (err.(mongo.BulkWriteException)).WriteErrors {
 
-		if mong.IsDuplicateKeyError(wError) {
+		if mdb.IsDuplicateKeyError(wError) {
 
 			if config.Current.Repl.Full.UpdateOnDuplicate {
 
@@ -126,7 +126,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (WriteResult, error) {
 						"index":      wError.Index,
 						"databse":    r.Database,
 						"collection": r.Collection,
-						"id":         mong.ExtractId(*docs[wError.Index]).Value})
+						"id":         mdb.ExtractId(*docs[wError.Index]).Value})
 				}
 			}
 		} else {
@@ -137,7 +137,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (WriteResult, error) {
 
 	if len(updateModels) != 0 {
 		opts := options.BulkWrite().SetOrdered(false)
-		_, err := mong.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
+		_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
 		if err != nil {
 			result.ErrorCount = len(updateModels)
 			return result, err

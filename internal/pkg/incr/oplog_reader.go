@@ -2,15 +2,17 @@ package incr
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -22,6 +24,8 @@ type OplogReader struct {
 	ckptManager checkpoint.CheckpointManager
 	oplogFilter *filter.Filter
 	done        chan bool
+	latestTs    primitive.Timestamp
+	queuedLogs  chan *oplog.ChangeLog
 }
 
 func NewOplogReader(ckptManager checkpoint.CheckpointManager) *OplogReader {
@@ -55,11 +59,17 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 	//findOptions.SetNoCursorTimeout(true)
 	//findOptions.SetCursorType(options.Tailable)
 	//findOptions.SetSort(bson.D{{"$natural", 1}})
-	latestTs := checkpoint.FromInt64(startingTimestamp.LatestLSN)
 
-	queuedLogs := make(chan *oplog.ChangeLog, 1000)
-	writer := NewOplogWriter(startingTimestamp.LatestLSN, queuedLogs, o.ckptManager)
+	o.latestTs = checkpoint.FromInt64(startingTimestamp.LatestLSN)
+	o.queuedLogs = make(chan *oplog.ChangeLog, 1000)
+
+	writer := NewOplogWriter(startingTimestamp.LatestLSN, o.queuedLogs, o.ckptManager)
 	writer.StartWriter(ctx)
+
+	o.Run(findOptions)
+}
+
+func (o *OplogReader) Run(findOptions *options.FindOptions) {
 
 	go func() {
 		for {
@@ -73,8 +83,8 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 			}
 
 			// Get the oplog cursor
-			filter := bson.D{{"ts", bson.D{{"$gt", latestTs}}}}
-			cur, err := mong.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filter, findOptions)
+			filterOnTs := bson.D{{"ts", bson.D{{"$gt", o.latestTs}}}}
+			cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, findOptions)
 			if err != nil {
 				log.Error("Error getting oplog cursor: ", err)
 				time.Sleep(CursorWaitTime)
@@ -107,55 +117,104 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 					continue
 				}
 
-				// Get the database and collection
-				db, coll := oplog.GetDbAndCollection(l.Namespace)
-
-				// Filter out unwanted operations
-				if !o.oplogFilter.KeepOperation(l.Operation) || !o.oplogFilter.KeepCollection(db, coll) {
+				if !o.oplogFilter.KeepOperation(l.Operation) {
 					continue
 				}
 
-				// // Try to get the object id
-				// var id primitive.ObjectID
-				// if config.Current.Logging.Level == log.DebugLevel {
-				// 	for _, bsonE := range l.Object {
-				// 		if bsonE.Key == "_id" {
-				// 			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
-				// 				id = oid
-				// 			}
-				// 		}
-				// 	}
-				// }
+				// Filter out unwanted operations
+				var db, coll string
+				if l.Operation == oplog.CommandOp {
 
-				// log.DebugWithFields("OPLOG entry: ", log.Fields{
-				// 	"ns": l.Namespace,
-				// 	"op": l.Operation,
-				// 	"ts": l.Timestamp,
-				// 	"id": id,
-				// })
+					// Namespace is not what you think it is for "c" operations
+					// It would be "admin.$cmd", the real collection is store in
+					// the "ns" field for sub-entries of the command
+					db, coll = oplog.GetDbAndCollection(l.Namespace)
 
-				// Process the oplog entry
-				queuedLogs <- &oplog.ChangeLog{
-					ParsedLog:  l,
-					Db:         db,
-					Collection: coll,
+					// Filter out unwanted commands
+					command, found := ExtraCommandName(l.Object)
+					log.Debug("Command: ", command)
+					if found && KeepOperation(command) {
+
+						cmd := l.Object
+						computedCmd := primitive.D{}
+						computedCmdSize := 0
+
+						// A command is a map of sub-commands
+						for _, ele := range cmd {
+							switch ele.Key {
+
+							// ApplyOps is a special command that contains a list of sub-commands
+							// We should filter out the unwanted sub-commands on the operation and namespace
+							case ApplyOps:
+								computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
+							case "startIndexBuild":
+							case "indexBuildUUID":
+							case "index":
+							case "indexes":
+								continue
+							case "commitIndexBuild":
+							case "dropIndexes":
+								computedCmd = cmd
+							default:
+								log.Info("Unknown command: ", ele.Key)
+								jsonCmd, _ := json.Marshal(l)
+								log.Info("Command: " + string(jsonCmd))
+							}
+						}
+
+						if computedCmdSize > 0 {
+							// Replace the command with the filtered one
+							l.Object = computedCmd
+							o.queuedLogs <- &oplog.ChangeLog{
+								ParsedLog:  l,
+								Db:         db,
+								Collection: coll,
+							}
+						}
+
+						o.queuedLogs <- &oplog.ChangeLog{
+							ParsedLog:  l,
+							Db:         db,
+							Collection: coll,
+						}
+
+						// Update the checkpoint
+						o.latestTs = l.Timestamp
+
+						// TODO: Should we increment by the number of sub-commands?
+						metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
+
+					} else {
+						// We are not interested in this command
+						// Yet we still need to update the checkpoint
+						// TODO: Check if we need to update the checkpoint
+						log.Debug("Unwanted command: ", command)
+						continue
+					}
+
+				} else {
+					// Get the database and collection
+					db, coll = oplog.GetDbAndCollection(l.Namespace)
+
+					// Check if we should replicate the command
+					if !o.oplogFilter.KeepCollection(db, coll) {
+						continue
+					}
+
+					// Process the oplog entry
+					o.queuedLogs <- &oplog.ChangeLog{
+						ParsedLog:  l,
+						Db:         db,
+						Collection: coll,
+					}
+					o.latestTs = l.Timestamp
+					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 				}
-				latestTs = l.Timestamp
-				metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 			}
 
 			// Release the cursor
 			cur.Close(context.Background())
 			time.Sleep(CursorWaitTime)
-
-			// Refresh the latest timestamp from the checkpoint stored in the DB
-			// Every minute, we will refresh the latest timestamp from the checkpoint stored in the DB
-			// savedTs, err := o.ckptManager.GetCheckpoint(context.Background())
-			// if err != nil {
-			// 	log.Error("Error getting the latest checkpoint: ", err)
-			// } else {
-			// 	latestTs = savedTs.LatestTs
-			// }
 		}
 	}()
 }

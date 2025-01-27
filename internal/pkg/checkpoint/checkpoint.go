@@ -27,7 +27,9 @@ type Checkpoint struct {
 	LatestLSN int64               `bson:"lsn" json:"lsn" omitempty`
 }
 
-func GetReplicasetOplogBoundaries() (TsWindow, error) {
+// Returns the boundaries of the oplog for the replicaset
+// with the oldest and newest timestamps in it.
+func GetReplicasetOplogWindow() (TsWindow, error) {
 
 	// smallestNew := MongoTimestampMax
 	// biggestNew := MongoTimestampMin

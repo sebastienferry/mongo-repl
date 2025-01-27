@@ -6,8 +6,8 @@ import (
 )
 
 type MongoRegistry struct {
-	source *Mong
-	target *Mong
+	source *MDB
+	target *MDB
 }
 
 func NewMongoRegistry(appConfig *config.AppConfig) *MongoRegistry {
@@ -23,7 +23,7 @@ func NewMongoRegistry(appConfig *config.AppConfig) *MongoRegistry {
 
 var Registry *MongoRegistry = nil
 
-func (m *MongoRegistry) GetSource() *Mong {
+func (m *MongoRegistry) GetSource() *MDB {
 
 	if m.source == nil {
 		log.Fatal("Source is nil")
@@ -31,7 +31,7 @@ func (m *MongoRegistry) GetSource() *Mong {
 	return m.source
 }
 
-func (m *MongoRegistry) GetTarget() *Mong {
+func (m *MongoRegistry) GetTarget() *MDB {
 
 	if m.target == nil {
 		log.Fatal("Target is nil")

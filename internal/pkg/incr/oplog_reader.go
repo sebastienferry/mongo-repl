@@ -45,7 +45,7 @@ func (o *OplogReader) StartReader(ctx context.Context) {
 	}
 
 	// Check the starting timestamp is within the boundaries of the oplog
-	oplogBoundaries, err := checkpoint.GetReplicasetOplogBoundaries()
+	oplogBoundaries, err := checkpoint.GetReplicasetOplogWindow()
 	if err != nil {
 		log.Fatal("Error computing the last checkpoint: ", err)
 	}

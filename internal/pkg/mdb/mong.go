@@ -12,13 +12,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type Mong struct {
+type MDB struct {
 	// Keep the connection/client
 	Client *mongo.Client
 }
 
 // NewMongo returns a new Mongo struct
-func NewMongo(connectUri string) *Mong {
+func NewMongo(connectUri string) *MDB {
 
 	c, err := connect(context.TODO(), connectUri)
 	if err != nil {
@@ -27,7 +27,7 @@ func NewMongo(connectUri string) *Mong {
 
 	log.Info("Successfully connected to the server", config.ObfuscateCrendentials(connectUri))
 
-	mongo := &Mong{
+	mongo := &MDB{
 		Client: c,
 	}
 

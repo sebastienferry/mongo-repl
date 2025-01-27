@@ -5,11 +5,11 @@ import (
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/full"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/incr"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mong"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/snapshot"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/stats"
 )
 
@@ -36,7 +36,7 @@ func StartReplication(ctx context.Context) {
 		config.Current.Repl.Incr.State.Collection)
 
 	// Establish the list of dbAndCollections to replicate
-	dbAndCollections, err := mong.ListDbCollections(ctx, config.Current.Repl.Databases)
+	dbAndCollections, err := mong.GetCollections(ctx, config.Current.Repl.Databases)
 	if err != nil {
 		log.Fatal("Error getting the list of collections to replicate: ", err)
 	}
@@ -64,7 +64,7 @@ func StartReplication(ctx context.Context) {
 		case InitialReplState:
 			log.Info("starting full replication")
 			// Block until the full replication is done
-			full.StartFullReplication(ctx, checkpointManager, dbAndCollections)
+			snapshot.RunSnapshots(ctx, checkpointManager, dbAndCollections)
 		case IncrementalReplState:
 			log.Info("starting incremental replication")
 			// Run asynchronously the incremental replication

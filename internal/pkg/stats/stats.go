@@ -41,7 +41,7 @@ func (c *CollectionStats) StartCollectionStats(ctx context.Context) {
 			// Every 4 iterations, we refresh the list of collections
 			// from the source database.
 			if iter%4 == 0 {
-				cols, err := mong.ListDbCollections(ctx, config.Current.Repl.Databases)
+				cols, err := mong.GetCollections(ctx, config.Current.Repl.Databases)
 				if err != nil {
 					log.Error("Error getting the list of collections to replicate: ", err)
 					continue
@@ -58,14 +58,14 @@ func (c *CollectionStats) getCollectionStats(db string, collections []string) {
 	for _, collection := range collections {
 
 		// GEt the stats for the source and target
-		count, err := mong.GetCollectionStats(mong.Registry.GetSource(), db, collection)
+		count, err := mong.GetStatsByCollection(mong.Registry.GetSource(), db, collection)
 		if err != nil {
 			continue
 		}
 
 		metrics.MongoReplSourceTotalDocumentCount.WithLabelValues("source", db, collection).Set(float64(count))
 
-		count, err = mong.GetCollectionStats(mong.Registry.GetTarget(), db, collection)
+		count, err = mong.GetStatsByCollection(mong.Registry.GetTarget(), db, collection)
 		if err != nil {
 			continue
 		}

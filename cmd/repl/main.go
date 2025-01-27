@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/api"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
@@ -38,11 +39,14 @@ func main() {
 	// Setup mongodb connectivity
 	mdb.Registry = mdb.NewMongoRegistry(config.Current)
 
-	// Start the API server
-	go api.StartApi()
+	// Create a global commands channel
+	commands := make(chan commands.Command, 10)
 
 	// Start the replication
-	go repl.StartReplication(context.Background())
+	repl.StartReplication(context.Background(), commands)
+
+	// Start the API server
+	api.StartApi(commands)
 
 	// Prepare to handle SIGINT
 	sigs := make(chan os.Signal, 1)

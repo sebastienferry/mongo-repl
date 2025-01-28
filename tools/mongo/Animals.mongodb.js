@@ -25,9 +25,6 @@ db.Vets.createIndex({ specialty: 1 });
 use("Animals");
 db.Vets.dropIndex("specialty_1");
 
-
-
-
 // Insert a weekly schedule for each veterinarian
 db.Vets.find().forEach(function(vet) {
     db.Schedules.insertOne({
@@ -38,7 +35,8 @@ db.Vets.find().forEach(function(vet) {
 });
 
 // Insert a list of 10 animals
-db.Animals.insertMany([
+use("Animals");
+db.Pets.insertMany([
     { name: "Fido", species: "Dog", breed: "Golden Retriever", age: 3, vetId: db.Vets.findOne({ specialty: "Small Animals" })._id },
     { name: "Whiskers", species: "Cat", breed: "Siamese", age: 5, vetId: db.Vets.findOne({ specialty: "Small Animals" })._id },
     { name: "Bubbles", species: "Fish", breed: "Goldfish", age: 1, vetId: db.Vets.findOne({ specialty: "Exotic Animals" })._id },

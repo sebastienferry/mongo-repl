@@ -69,7 +69,7 @@ func RunReplication(ctx context.Context, commands chan commands.Command) {
 		case InitialReplState:
 			log.Info("starting full replication")
 			// Block until the full replication is done
-			snapshot.RunSnapshots(ctx, checkpointManager, dbAndCollections)
+			snapshot.NewSnapshot(checkpointManager).RunSnapshots(ctx, dbAndCollections)
 		case IncrementalReplState:
 			log.Info("starting incremental replication")
 			// Run the incremental replication, blocking here

@@ -23,6 +23,7 @@ func StartApi(commands chan<- commands.Command) {
 	cmdsApi := NewCommandApi(commands)
 	router.POST("/command/incr/pause", cmdsApi.PauseIncrReplication)
 	router.POST("/command/incr/resume", cmdsApi.ResumeIncrReplication)
+	router.POST("/command/snapshot", cmdsApi.RunSnapshot)
 
 	router.Run(":3000")
 }

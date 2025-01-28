@@ -5,3 +5,11 @@ POST http://localhost:3000/command/incr/pause
 POST http://localhost:3000/command/incr/resume
 
 
+###
+
+POST http://localhost:3000/command/snapshot
+Content-Type: application/json
+
+[
+    { "database": "Animals", "collection": "Vets" }
+]

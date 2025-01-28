@@ -43,3 +43,37 @@ func (a *CommandApi) ResumeIncrReplication(c *gin.Context) {
 		c.Status(429)
 	}
 }
+
+type SnapshotRequest struct {
+	Database   string `json:"database" binding:"required"`
+	Collection string `json:"collection" binding:"required"`
+}
+
+func (a *CommandApi) RunSnapshot(c *gin.Context) {
+
+	var snapshops []SnapshotRequest
+	if err := c.ShouldBindBodyWithJSON(&snapshops); err != nil || len(snapshops) <= 0 {
+		log.ErrorWithFields("Error when triggering snapshop",
+			log.Fields{"collection": "collection", "error": err})
+
+		c.Status(500)
+	}
+
+	success := true
+	for _, snapshot := range snapshops {
+		select {
+		case a.commands <- commands.NewCmdSnapshot(snapshot.Database, snapshot.Collection):
+			log.InfoWithFields("Snaphot command sent",
+				log.Fields{"database": snapshot.Database, "collection": snapshot.Collection})
+		default:
+			log.Error("Snaphot command not sent")
+			success = false
+		}
+	}
+
+	if success {
+		c.Status(200)
+	} else {
+		c.Status(429)
+	}
+}

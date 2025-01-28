@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/api"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/collections"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/snapshot"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -27,14 +30,15 @@ type Reader interface {
 }
 
 type OplogReader struct {
-	ckpt    checkpoint.CheckpointManager
-	filter  *filter.Filter
-	latest  primitive.Timestamp
-	queue   chan *oplog.ChangeLog
-	options *options.FindOptions
-	cmdc    <-chan commands.Command
-	done    chan bool
-	state   int
+	ckpt      checkpoint.CheckpointManager
+	filter    *filter.Filter
+	latest    primitive.Timestamp
+	queue     chan *oplog.ChangeLog
+	options   *options.FindOptions
+	cmdc      <-chan commands.Command
+	done      chan bool
+	state     int
+	snapshots *collections.AtomicQueue[api.SnapshotRequest]
 }
 
 func NewOplogReader(ckpt checkpoint.CheckpointManager,
@@ -42,14 +46,15 @@ func NewOplogReader(ckpt checkpoint.CheckpointManager,
 	cmdc <-chan commands.Command,
 	queue chan *oplog.ChangeLog) *OplogReader {
 	return &OplogReader{
-		latest:  latest,
-		ckpt:    ckpt,
-		filter:  filter.NewFilter(),
-		options: options.Find(),
-		queue:   queue,
-		cmdc:    cmdc,
-		done:    make(chan bool),
-		state:   StateUnknown,
+		latest:    latest,
+		ckpt:      ckpt,
+		filter:    filter.NewFilter(),
+		options:   options.Find(),
+		queue:     queue,
+		cmdc:      cmdc,
+		done:      make(chan bool),
+		state:     StateUnknown,
+		snapshots: collections.NewAtomicQueue[api.SnapshotRequest](),
 	}
 }
 
@@ -80,6 +85,22 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 				case commands.CmdIdResumeIncr:
 					r.state = StateRunning
 					log.Info("Incremental replication resumed")
+				case commands.CmdIdSnapshot:
+
+					// Extract the collection to snapshot
+					if len(cmd.Arguments) <= 1 {
+						log.Warn("Invalid argument for snapshot")
+					}
+
+					database := cmd.Arguments[0]
+					collection := cmd.Arguments[1]
+
+					r.snapshots.Enqueue(api.SnapshotRequest{
+						Database:   database,
+						Collection: collection,
+					})
+					log.Info("Snapshot request received for ", collection)
+
 				case StateRunning:
 				default:
 				}
@@ -98,6 +119,17 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 			time.Sleep(CursorWaitTime)
 			log.Debug("Incremental replication is paused, sleeping for ", CursorWaitTime.Seconds(), " secs")
 			continue
+		}
+
+		if !r.snapshots.IsEmpty() {
+			// Execute the snapshot for the collection
+			// Currenctly this is synchronous to the reader.
+			// Shall we have a dedicated go routine to handle this
+			// And have this thread to be waiting for it ?
+			// Should we store some state (the snapshot queue) in the database ?
+			requested := r.snapshots.Dequeue()
+			//snapshot.NewSnapshot(r.ckpt).RunSnapshot(ctx, requested.Database, requested.Collection)
+			snapshot.Replicate(ctx, requested.Database, requested.Collection)
 		}
 
 		// Get the oplog cursor

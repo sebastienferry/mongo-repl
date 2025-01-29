@@ -3,6 +3,7 @@ package snapshot
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -54,25 +55,114 @@ func (s *MockSynchronizer) Delete(ctx context.Context, item *primitive.D) error 
 
 func TestCompareAndSync(t *testing.T) {
 
-	var source ItemsResult = ItemsResult{
-		Items:     nil,
-		HighestId: primitive.ObjectID{},
-		Count:     0,
-	}
-
-	var target ItemsResult = ItemsResult{
-		Items:     nil,
-		HighestId: primitive.ObjectID{},
-		Count:     0,
+	var data = []struct {
+		source   ItemsResult
+		target   ItemsResult
+		expected int
+	}{
+		{
+			ItemsResult{
+				Items:     nil,
+				HighestId: primitive.ObjectID{},
+				Count:     0,
+			},
+			ItemsResult{
+				Items:     nil,
+				HighestId: primitive.ObjectID{},
+				Count:     0,
+			},
+			0,
+		},
+		{
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+				Count:     4,
+			},
+			ItemsResult{
+				Items:     nil,
+				HighestId: primitive.ObjectID{},
+				Count:     0,
+			},
+			4,
+		},
+		{
+			ItemsResult{
+				Items:     nil,
+				HighestId: primitive.ObjectID{},
+				Count:     0,
+			},
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+				Count:     4,
+			},
+			0,
+		},
+		{
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+				Count:     4,
+			},
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+				Count:     4,
+			},
+			4,
+		},
+		{
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}),
+				Count:     2,
+			},
+			ItemsResult{
+				Items: []*bson.D{
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
+					{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
+				},
+				HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
+				Count:     4,
+			},
+			2,
+		},
 	}
 
 	synchronizer := NewMockSynchronizer()
 
-	// Insert some data in the source collection
-	compareAndSync(context.TODO(), source, target, synchronizer)
+	for _, d := range data {
+		compareAndSync(context.TODO(), d.source, d.target, synchronizer)
 
-	// Check if the data was inserted
-	if len(synchronizer.Items) != 1 {
-		t.Error("Expected 1 item, got ", len(synchronizer.Items))
+		// Check if the data was inserted
+		if len(synchronizer.Items) != d.expected {
+			t.Errorf(fmt.Sprintf("Expected %d item, got", d.expected), len(synchronizer.Items))
+		}
 	}
 }

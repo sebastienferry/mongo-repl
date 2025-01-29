@@ -128,8 +128,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 			// And have this thread to be waiting for it ?
 			// Should we store some state (the snapshot queue) in the database ?
 			requested := r.snapshots.Dequeue()
-			//snapshot.NewSnapshot(r.ckpt).RunSnapshot(ctx, requested.Database, requested.Collection)
-			snapshot.Replicate(ctx, requested.Database, requested.Collection)
+			snapshot.SynchronizeCollection(ctx, requested.Database, requested.Collection)
 		}
 
 		// Get the oplog cursor

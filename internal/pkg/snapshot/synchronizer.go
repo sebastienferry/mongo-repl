@@ -4,13 +4,14 @@ import (
 	"context"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type Synchronizer interface {
 	Insert(ctx context.Context, item *primitive.D) error
 	Update(ctx context.Context, source *primitive.D, target *primitive.D) error
-	Delete(ctx context.Context, item *primitive.D) error
+	Delete(ctx context.Context, id primitive.ObjectID) error
 }
 
 type MongoSynchronizer struct {
@@ -37,7 +38,8 @@ func (s *MongoSynchronizer) Update(ctx context.Context, source *primitive.D, tar
 	return err
 }
 
-func (s *MongoSynchronizer) Delete(ctx context.Context, item *primitive.D) error {
-	_, err := s.Target.Client.Database(s.Database).Collection(s.Collection).DeleteOne(ctx, item)
+func (s *MongoSynchronizer) Delete(ctx context.Context, id primitive.ObjectID) error {
+	_, err := s.Target.Client.Database(s.Database).Collection(s.Collection).DeleteOne(ctx,
+		bson.D{{Key: "_id", Value: id}})
 	return err
 }

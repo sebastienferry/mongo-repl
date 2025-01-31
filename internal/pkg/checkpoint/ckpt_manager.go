@@ -138,7 +138,11 @@ func (s *MongoCheckpoint) saveCheckpoint(ctx context.Context) error {
 	return nil
 }
 
-func (s *MongoCheckpoint) StartAutosave(context.Context) {
+func (s *MongoCheckpoint) StartAutosave(ctx context.Context) {
+	go s.RunAutosave(ctx)
+}
+
+func (s *MongoCheckpoint) RunAutosave(context.Context) {
 
 	log.Info("Starting autosave")
 	go func() {

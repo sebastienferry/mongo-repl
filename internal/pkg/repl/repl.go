@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/incr"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
@@ -27,7 +28,11 @@ var (
 	}
 )
 
-func StartReplication(ctx context.Context) {
+func StartReplication(ctx context.Context, commands chan commands.Command) {
+	go RunReplication(ctx, commands)
+}
+
+func RunReplication(ctx context.Context, commands chan commands.Command) {
 
 	log.Info("Starting replication")
 	checkpointManager := checkpoint.NewMongoCheckpointService(
@@ -64,13 +69,11 @@ func StartReplication(ctx context.Context) {
 		case InitialReplState:
 			log.Info("starting full replication")
 			// Block until the full replication is done
-			snapshot.RunSnapshots(ctx, checkpointManager, dbAndCollections)
+			snapshot.NewSnapshot(checkpointManager).RunSnapshots(ctx, dbAndCollections)
 		case IncrementalReplState:
 			log.Info("starting incremental replication")
-			// Run asynchronously the incremental replication
-			incr.StartIncrementalReplication(ctx, checkpointManager)
-			// And exit the function
-			return
+			// Run the incremental replication, blocking here
+			incr.NewIncr(checkpointManager, commands).RunIncremental(ctx)
 		default:
 			log.Fatal("unknown replication type")
 		}

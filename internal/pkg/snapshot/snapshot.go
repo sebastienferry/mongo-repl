@@ -15,8 +15,17 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func RunSnapshots(ctx context.Context, checkpointManager checkpoint.CheckpointManager,
-	dbAndCollections map[string][]string) {
+type Snapshot struct {
+	ckpt checkpoint.CheckpointManager
+}
+
+func NewSnapshot(ckpt checkpoint.CheckpointManager) *Snapshot {
+	return &Snapshot{
+		ckpt: ckpt,
+	}
+}
+
+func (s *Snapshot) RunSnapshots(ctx context.Context, dbAndCollections map[string][]string) {
 
 	// Get the oplog windows
 	oplogWindow, err := checkpoint.GetReplicasetOplogWindow()
@@ -49,7 +58,7 @@ func RunSnapshots(ctx context.Context, checkpointManager checkpoint.CheckpointMa
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				replErr = RunSnapshot(context.Background(), db, collection)
+				replErr = s.RunSnapshot(context.Background(), db, collection)
 			}()
 		}
 
@@ -70,11 +79,11 @@ func RunSnapshots(ctx context.Context, checkpointManager checkpoint.CheckpointMa
 		})
 
 		// As the full replication is finished, we can save the checkpoint
-		checkpointManager.SetCheckpoint(ctx, oplogWindow.Newest, true)
+		s.ckpt.SetCheckpoint(ctx, oplogWindow.Newest, true)
 	}
 }
 
-func RunSnapshot(ctx context.Context, database string, collection string) error {
+func (s *Snapshot) RunSnapshot(ctx context.Context, database string, collection string) error {
 
 	writer := NewDocumentWriter(database, collection, mdb.Registry.GetTarget())
 	reader := NewDocumentReader(database, collection, mdb.Registry.GetSource(),
@@ -93,7 +102,7 @@ func RunSnapshot(ctx context.Context, database string, collection string) error 
 	}
 
 	// Replicate the indexes
-	err = ReplicateIndexes(ctx, database, collection)
+	err = s.ReplicateIndexes(ctx, database, collection)
 	if err != nil {
 		log.Error("Error replicating the indexes: ", err)
 		return err
@@ -103,7 +112,7 @@ func RunSnapshot(ctx context.Context, database string, collection string) error 
 }
 
 // Replicates the indexes from the source to the target
-func ReplicateIndexes(ctx context.Context, database string, collection string) error {
+func (s *Snapshot) ReplicateIndexes(ctx context.Context, database string, collection string) error {
 
 	// Get the indexes from the source
 	indexes, err := mdb.GetIndexesByDb(ctx, database, collection)

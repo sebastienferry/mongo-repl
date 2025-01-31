@@ -5,16 +5,27 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	health "github.com/hellofresh/health-go/v5"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 )
 
-func StartApi() {
-	http.Handle("/metrics", promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{}))
-	http.Handle("/status", CreateHealthCheckHandler())
-	http.ListenAndServe(":3000", nil)
+func StartApi(commands chan<- commands.Command) {
+
+	router := gin.Default()
+	router.GET("/metrics", gin.WrapH(promhttp.HandlerFor(metrics.Registry, promhttp.HandlerOpts{})))
+	router.GET("/status", gin.WrapH(CreateHealthCheckHandler()))
+
+	// Commands api
+	cmdsApi := NewCommandApi(commands)
+	router.POST("/command/incr/pause", cmdsApi.PauseIncrReplication)
+	router.POST("/command/incr/resume", cmdsApi.ResumeIncrReplication)
+	router.POST("/command/snapshot", cmdsApi.RunSnapshot)
+
+	router.Run(":3000")
 }
 
 func CreateHealthCheckHandler() http.Handler {

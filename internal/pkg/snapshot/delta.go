@@ -129,18 +129,21 @@ func compareAndSync(ctx context.Context, source []*bson.D, target []*bson.D, syn
 		} else if compare > 0 {
 
 			if targetIndex >= targetCount {
+
+				// The source ID is lower than the target ID
+				// And we reached the end of the target slice
+				// ==> Add the source item to the target
 				err := synchronizer.Insert(ctx, source[sourceIndex])
-				log.Info("Inserting document: ", source[sourceIndex])
 				if err != nil {
 					log.Error("Error inserting document: ", err)
 					return err
 				}
-
+				log.Info("Inserted document: ", targetId)
 				sourceIndex++
 			} else {
 
 				// The source ID is bigger than the target ID
-				// Remove the target item
+				// ==> Remove the target item
 				log.Info("Deleting document: ", target[targetIndex])
 
 				idToDelete, ok := getObjectId(target[targetIndex])
@@ -163,7 +166,8 @@ func compareAndSync(ctx context.Context, source []*bson.D, target []*bson.D, syn
 			if sourceIndex >= sourceCount {
 
 				// The source ID is bigger than the target ID
-				// Remove the target item
+				// and we reached the end of the source slice
+				// ==> We need to remove the target item
 				log.Info("Deleting document: ", target[targetIndex])
 
 				idToDelete, ok := getObjectId(target[targetIndex])
@@ -183,7 +187,7 @@ func compareAndSync(ctx context.Context, source []*bson.D, target []*bson.D, syn
 			} else {
 
 				// The source ID is lower than the target ID
-				// Add the source item to the target
+				// ==> Insert the source item to the target
 				err := synchronizer.Insert(ctx, source[sourceIndex])
 				log.Info("Inserting document: ", source[sourceIndex])
 				if err != nil {

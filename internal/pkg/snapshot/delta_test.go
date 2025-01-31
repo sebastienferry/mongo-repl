@@ -3,6 +3,7 @@ package snapshot
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"math"
 	"slices"
@@ -18,7 +19,7 @@ type MockDatabse struct {
 
 func NewMockDatabase(items []*bson.D) *MockDatabse {
 	return &MockDatabse{
-		Items: items,
+		Items: slices.Clone(items),
 	}
 }
 
@@ -53,118 +54,65 @@ func (s *MockDatabse) Delete(ctx context.Context, id primitive.ObjectID) error {
 	return nil
 }
 
+func CreateTestData(items ...byte) []*bson.D {
+
+	var data []*bson.D
+	for _, i := range items {
+		data = append(data, &bson.D{{"_id", primitive.ObjectID([12]byte{
+			// Convert the int to a 12 bytes array
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, i})}})
+	}
+
+	return data
+}
+
 func TestCompareAndSync(t *testing.T) {
 
-	// var data = []struct {
-	// 	source   ItemsResult
-	// 	target   ItemsResult
-	// 	expected int
-	// }{
-	// 	{
-	// 		ItemsResult{
-	// 			Items:     nil,
-	// 			HighestId: primitive.ObjectID{},
-	// 			Count:     0,
-	// 		},
-	// 		ItemsResult{
-	// 			Items:     nil,
-	// 			HighestId: primitive.ObjectID{},
-	// 			Count:     0,
-	// 		},
-	// 		0,
-	// 	},
-	// 	{
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
-	// 			Count:     4,
-	// 		},
-	// 		ItemsResult{
-	// 			Items:     nil,
-	// 			HighestId: primitive.ObjectID{},
-	// 			Count:     0,
-	// 		},
-	// 		4,
-	// 	},
-	// 	{
-	// 		ItemsResult{
-	// 			Items:     nil,
-	// 			HighestId: primitive.ObjectID{},
-	// 			Count:     0,
-	// 		},
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
-	// 			Count:     4,
-	// 		},
-	// 		0,
-	// 	},
-	// 	{
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
-	// 			Count:     4,
-	// 		},
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
-	// 			Count:     4,
-	// 		},
-	// 		4,
-	// 	},
-	// 	{
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3}),
-	// 			Count:     2,
-	// 		},
-	// 		ItemsResult{
-	// 			Items: []*bson.D{
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-	// 				{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	// 			},
-	// 			HighestId: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4}),
-	// 			Count:     4,
-	// 		},
-	// 		2,
-	// 	},
-	// }
+	var data = []struct {
+		source   []*bson.D
+		target   []*bson.D
+		expected int
+	}{
+		{
+			// Both source and target are nil
+			nil, nil, 0,
+		},
+		{
+			// Both source and target are empty
+			[]*bson.D{}, []*bson.D{}, 0,
+		},
+		{
+			// Only source has data: Add the all
+			CreateTestData(1, 2, 3, 4), nil, 4,
+		},
+		{
+			// Only target has data : Drop them all
+			nil, CreateTestData(1, 2, 3, 4), 0,
+		},
+		{
+			// Source and target are the same : Update them all
+			CreateTestData(1, 2, 3, 4), CreateTestData(1, 2, 3, 4), 4,
+		},
+		{
+			// Source has less data than target : Remove the extra
+			CreateTestData(1, 3), CreateTestData(1, 2, 3, 4), 2,
+		},
+		{
+			// Source has more data than target : Add the missing
+			// 3 is updated, 8, 9, 12 are added and 4, 5 are removed
+			CreateTestData(1, 3, 8, 9, 12), CreateTestData(2, 3, 4, 5), 5,
+		},
+	}
 
-	// synchronizer := NewMockSynchronizer()
+	for _, d := range data {
+		synchronizer := NewMockDatabase(d.target)
+		compareAndSync(context.TODO(), d.source, d.target, synchronizer)
 
-	// for _, d := range data {
-	// 	compareAndSync(context.TODO(), d.source, d.target, synchronizer)
-
-	// 	// Check if the data was inserted
-	// 	if len(synchronizer.Items) != d.expected {
-	// 		t.Errorf(fmt.Sprintf("Expected %d item, got", d.expected), len(synchronizer.Items))
-	// 	}
-	// }
+		// Check if the data was inserted
+		if len(synchronizer.Items) != d.expected {
+			t.Errorf(fmt.Sprintf("Expected %d item, got", d.expected), len(synchronizer.Items))
+		}
+	}
 }
 
 type MockItemReader struct {
@@ -207,23 +155,11 @@ func (r *MockDatabse) ReadItems(ctx context.Context, batchSize int, startId prim
 
 func TestSynchronizeCollection(t *testing.T) {
 
-	source := NewMockDatabase([]*bson.D{
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2})}},
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-	})
-
-	targetData := []*bson.D{
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1})}},
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3})}},
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4})}},
-		{{"_id", primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5})}},
-	}
-
+	source := NewMockDatabase(CreateTestData(1, 2, 4))
+	targetData := CreateTestData(1, 3, 4, 5)
 	targetDatabase := NewMockDatabase(targetData)
 
 	SynchronizeCollection(context.TODO(), 1, source, targetDatabase, targetDatabase, "test", "test")
-
 	for _, item := range targetDatabase.Items {
 		id, _ := getObjectId(item)
 		log.Println("Item: ", id)

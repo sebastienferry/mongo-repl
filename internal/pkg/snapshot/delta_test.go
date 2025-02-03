@@ -1,58 +1,14 @@
 package snapshot
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
-	"math"
-	"slices"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
-
-type MockDatabse struct {
-	Items []*bson.D
-}
-
-func NewMockDatabase(items []*bson.D) *MockDatabse {
-	return &MockDatabse{
-		Items: slices.Clone(items),
-	}
-}
-
-func (s *MockDatabse) Insert(ctx context.Context, item *primitive.D) error {
-
-	s.Items = append(s.Items, item)
-	slices.SortFunc(s.Items, func(i, j *bson.D) int {
-		ii, _ := getObjectId(i)
-		jj, _ := getObjectId(j)
-		return bytes.Compare(ii[:], jj[:])
-	})
-	return nil
-}
-
-func (s *MockDatabse) Update(ctx context.Context, source *primitive.D, target *primitive.D) error {
-	return nil
-}
-
-func (s *MockDatabse) Delete(ctx context.Context, id primitive.ObjectID) error {
-
-	index := slices.IndexFunc(s.Items, func(i *bson.D) bool {
-		val, ok := getObjectId(i)
-		if !ok {
-			panic("Item does not have an ID")
-		}
-		return bytes.Compare(val[:], id[:]) == 0
-	})
-
-	if index >= 0 {
-		s.Items = append(s.Items[:index], s.Items[index+1:]...)
-	}
-	return nil
-}
 
 func CreateTestData(items ...byte) []*bson.D {
 
@@ -69,99 +25,74 @@ func CreateTestData(items ...byte) []*bson.D {
 func TestCompareAndSync(t *testing.T) {
 
 	var data = []struct {
+		name     string
 		source   []*bson.D
 		target   []*bson.D
 		expected int
 	}{
 		{
 			// Both source and target are nil
+			"null everything",
 			nil, nil, 0,
 		},
 		{
 			// Both source and target are empty
+			"empty everything",
 			[]*bson.D{}, []*bson.D{}, 0,
 		},
 		{
 			// Only source has data: Add the all
+			"add all",
 			CreateTestData(1, 2, 3, 4), nil, 4,
 		},
 		{
 			// Only target has data : Drop them all
+			"drop all",
 			nil, CreateTestData(1, 2, 3, 4), 0,
 		},
 		{
 			// Source and target are the same : Update them all
+			"update all",
 			CreateTestData(1, 2, 3, 4), CreateTestData(1, 2, 3, 4), 4,
 		},
 		{
 			// Source has less data than target : Remove the extra
+			"remove extra",
 			CreateTestData(1, 3), CreateTestData(1, 2, 3, 4), 2,
 		},
 		{
 			// Source has more data than target : Add the missing
 			// 3 is updated, 8, 9, 12 are added and 4, 5 are removed
+			"add missing",
 			CreateTestData(1, 3, 8, 9, 12), CreateTestData(2, 3, 4, 5), 5,
+		},
+		{
+			"more advanced case",
+			CreateTestData(1, 2, 3, 50, 100, 101, 105),
+			CreateTestData(1, 2, 3, 5, 6, 7, 8, 9, 200, 201),
+			7,
 		},
 	}
 
-	for _, d := range data {
-		synchronizer := NewMockDatabase(d.target)
-		compareAndSync(context.TODO(), d.source, d.target, synchronizer)
+	// Testing various batch sizes
+	// 1, 2, 4, 8, 16, 32, 64
+	for batchSize := 1; batchSize < 100; batchSize = batchSize * 2 {
 
-		// Check if the data was inserted
-		if len(synchronizer.Items) != d.expected {
-			t.Errorf(fmt.Sprintf("Expected %d item, got", d.expected), len(synchronizer.Items))
+		for _, d := range data {
+
+			log.Printf("Case: %s, Batch size %d\n", d.name, batchSize)
+			source := NewMockDatabase(d.source)
+			target := NewMockDatabase(d.target)
+			//writer := NewMockDatabase(d.target)
+
+			synchronization := NewDeltaReplication(source, target, target, "test", "test", false, batchSize)
+			synchronization.SynchronizeCollection(context.TODO())
+
+			// Check if the data was inserted
+			if len(target.Items) != d.expected {
+				t.Errorf(fmt.Sprintf("Case %s, Expected %d item, got", d.name, d.expected), len(target.Items))
+			}
 		}
-	}
-}
 
-type MockItemReader struct {
-	Items *[]*bson.D
-	Index int
-}
-
-func NewMockItemReader(items *[]*bson.D) *MockItemReader {
-	return &MockItemReader{
-		Items: items,
-		Index: 0,
-	}
-}
-
-func (r *MockDatabse) ReadItems(ctx context.Context, batchSize int, startId primitive.ObjectID) ([]*bson.D, error) {
-
-	var startIndex = 0
-
-	n, found := slices.BinarySearchFunc(r.Items, startId, func(i *bson.D, target primitive.ObjectID) int {
-		val, ok := getObjectId(i)
-		if !ok {
-			panic("Item does not have an ID")
-		}
-		return bytes.Compare(val[:], target[:])
-	})
-
-	if !found {
-		startIndex = n
-	} else {
-		startIndex = n + 1
-	}
-
-	// Make sure we do not go out of bounds
-	if startIndex+batchSize > len(r.Items) {
-		batchSize = int(math.Max(0, float64(len(r.Items)-startIndex)))
-	}
-
-	return r.Items[startIndex : startIndex+batchSize], nil
-}
-
-func TestSynchronizeCollection(t *testing.T) {
-
-	source := NewMockDatabase(CreateTestData(1, 2, 4))
-	targetData := CreateTestData(1, 3, 4, 5)
-	targetDatabase := NewMockDatabase(targetData)
-
-	SynchronizeCollection(context.TODO(), 1, source, targetDatabase, targetDatabase, "test", "test")
-	for _, item := range targetDatabase.Items {
-		id, _ := getObjectId(item)
-		log.Println("Item: ", id)
 	}
 }

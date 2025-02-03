@@ -107,7 +107,7 @@ func (r *DocumentReader) Replicate(ctx context.Context) error {
 		limit.Incr(count)
 
 		// Successfully read a batch of documents. Increment the counter
-		metrics.FullSyncReadCounter.WithLabelValues(r.Database, r.Collection).Inc()
+		metrics.SnapshotReadCounter.WithLabelValues(r.Database, r.Collection).Inc()
 
 		if bufferByteSize+len(raw) > MAX_BUFFER_BYTE_SIZE || len(buffer) >= bufferSize {
 
@@ -151,14 +151,14 @@ func (r *DocumentReader) Replicate(ctx context.Context) error {
 }
 
 // Report the result of the write operation
-func (r *DocumentReader) ReportResult(result WriteResult) {
+func (r *DocumentReader) ReportResult(result BulkResult) {
 	// TODO : Should we reflect the success rate or the progress ?
 	r.Progress.Increment(result.InsertedCount + result.UpdatedCount + result.SkippedOnDuplicateCount + result.ErrorCount)
-	metrics.FullSyncWriteCounter.WithLabelValues(r.Database, r.Collection, "insert").Add(float64(result.InsertedCount))
-	metrics.FullSyncWriteCounter.WithLabelValues(r.Database, r.Collection, "update").Add(float64(result.UpdatedCount))
-	metrics.FullSyncErrorTotal.WithLabelValues(r.Database, r.Collection, "skip").Add(float64(result.SkippedOnDuplicateCount))
-	metrics.FullSyncErrorTotal.WithLabelValues(r.Database, r.Collection, "bulk").Add(float64(result.ErrorCount))
-	metrics.FullSyncProgressGauge.WithLabelValues(r.Database, r.Collection).Set(r.Progress.Progress())
+	metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, "insert").Add(float64(result.InsertedCount))
+	metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, "update").Add(float64(result.UpdatedCount))
+	metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, "skip").Add(float64(result.SkippedOnDuplicateCount))
+	metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, "bulk").Add(float64(result.ErrorCount))
+	metrics.SnapshotProgressGauge.WithLabelValues(r.Database, r.Collection).Set(r.Progress.Progress())
 }
 
 // Set the total count of documents to sync

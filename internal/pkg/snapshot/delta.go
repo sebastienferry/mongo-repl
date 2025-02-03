@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"math"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"go.mongodb.org/mongo-driver/bson"
@@ -11,199 +12,256 @@ import (
 )
 
 type DeltaReplication struct {
+	SourceReader ItemReader
+	TargetReader ItemReader
+	TargetWriter ItemWriter
+	Database     string
+	Collection   string
+	Initial      bool
+	BatchSize    int
+
+	// The current batch
+	currentBatch  int
+	firstId       primitive.ObjectID
+	itemsToInsert []*bson.D
+	itemsToUpdate []*bson.D
+	itemsToDelete []primitive.ObjectID
 }
 
-func SynchronizeCollection(ctx context.Context, batchSize int, sourceReader ItemReader, targetReader ItemReader,
-	synchronizer Synchronizer, database string, collection string) error {
-	// Take the X first elements from source and destination
+func NewDeltaReplication(sourceReader ItemReader, targetReader ItemReader, targetWriter ItemWriter,
+	database string, collection string, initial bool, batchSize int) *DeltaReplication {
+	return &DeltaReplication{
+		SourceReader: sourceReader,
+		TargetReader: targetReader,
+		TargetWriter: targetWriter,
+		Database:     database,
+		Collection:   collection,
+		Initial:      initial,
+		BatchSize:    batchSize,
+	}
+}
 
-	startId := primitive.ObjectID{}
+func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 
-	var batch = 1
+	r.currentBatch = 1
+	r.firstId = primitive.ObjectID{}
+
 	// Loop until there are no more items to sync
 	for {
 
 		log.InfoWithFields("Snapshot execution", log.Fields{
-			"batch":      batch,
-			"database":   database,
-			"collection": collection,
+			"batch":      r.currentBatch,
+			"database":   r.Database,
+			"collection": r.Collection,
 		})
 
 		// Read from source
-		source, err := sourceReader.ReadItems(ctx, batchSize, startId)
+		source, err := r.SourceReader.ReadItems(ctx, r.BatchSize, r.firstId)
 		if err != nil {
 			log.Error("Error reading source items: ", err)
 			return err
 		}
 
-		// Read from target
-		target, err := targetReader.ReadItems(ctx, batchSize, startId)
-		if err != nil {
-			log.Error("Error reading target items: ", err)
-			return err
+		lastId := primitive.ObjectID{}
+		if len(source) > 0 {
+			lastId = GetObjectId(source[len(source)-1])
 		}
 
-		var ok bool = true
-		if len(source) > 0 {
-			startId, ok = getObjectId(source[len(source)-1])
-			if !ok {
-				log.Error("Error getting source ID: ", err)
+		//log.Info(fmt.Sprintf("IDs range: ]%s - %s]", r.firstId.String(), lastId.String()))
+
+		// Read from target all the items between startId and endId
+		target := make([]*bson.D, 0)
+		if !r.Initial {
+			target, err = r.TargetReader.ReadItems(ctx, r.BatchSize, r.firstId, lastId)
+			if err != nil {
+				log.Error("Error reading target items: ", err)
 				return err
 			}
 		}
 
-		if !ok {
-			log.Error("Error getting source ID: ", err)
-			return err
-		}
-
 		if len(source) == 0 && len(target) == 0 {
-			log.Info("No more items to sync")
+			log.Debug("No more items to sync")
 			break
 		}
 
 		// Compare the two slices : source and target
-		// Add missing items to target and remove extra items from target
-		err = compareAndSync(ctx, source, target, synchronizer)
+		// Compute the list of items to insert, update and delete
+		err = r.computeDelta(ctx, source, target)
 		if err != nil {
 			log.Error("Error comparing and syncing items: ", err)
 			return err
 		}
 
-		batch++
+		// Insert, update and delete the items
+		if len(r.itemsToInsert) > 0 {
+			_, err = r.TargetWriter.InsertMany(ctx, r.itemsToInsert)
+			if err != nil {
+				log.Error("Error inserting documents: ", err)
+				return err
+			}
+		}
+
+		if len(r.itemsToUpdate) > 0 {
+			_, err = r.TargetWriter.UpdateMany(ctx, r.itemsToUpdate)
+			if err != nil {
+				log.Error("Error updating documents: ", err)
+				return err
+			}
+		}
+
+		if len(r.itemsToDelete) > 0 {
+			_, err = r.TargetWriter.DeleteMany(ctx, r.itemsToDelete)
+			if err != nil {
+				log.Error("Error deleting documents: ", err)
+				return err
+			}
+		}
+		r.currentBatch++
 	}
 	return nil
 }
 
-func compareAndSync(ctx context.Context, source []*bson.D, target []*bson.D, synchronizer Synchronizer) error {
+func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, target []*bson.D) error {
 
 	// Compare the two slices : source and target
 	// Nota bene: The slices are sorted by ID
 	// Add missing items to target
 	// Update the target with the source items
 	// Remove extra items from target
-	sourceIndex := 0
-	targetIndex := 0
 
-	var sourceId primitive.ObjectID
-	var targetId primitive.ObjectID
+	var sourceId, lastSourceId primitive.ObjectID
+	var targetId, lastTargetId primitive.ObjectID
 	var ok bool
 
 	sourceCount := len(source)
 	targetCount := len(target)
 
-	for sourceIndex < sourceCount || targetIndex < targetCount {
+	r.itemsToInsert = make([]*bson.D, 0, r.BatchSize)
+	r.itemsToUpdate = make([]*bson.D, 0, r.BatchSize)
+	r.itemsToDelete = make([]primitive.ObjectID, 0, r.BatchSize)
 
-		if sourceIndex < sourceCount {
-			sourceId, ok = getObjectId(source[sourceIndex])
+	// We loop until we reach the end of at least one slice.
+	var lowest int = (int)(math.Min(float64(sourceCount), float64(targetCount)))
+	var sourceIndex int
+	var targetIndex int
+	for sourceIndex < lowest || targetIndex < lowest {
+
+		// We did not reach the end of the source slice
+		if sourceIndex < lowest {
+			sourceId, ok = TryGetObjectId(source[sourceIndex])
 			if !ok {
 				log.Error("Error getting source ID")
 				return errors.New("Error getting source ID")
 			}
+		} else {
+			sourceId = primitive.ObjectID{}
 		}
 
-		if targetIndex < targetCount {
-			targetId, ok = getObjectId(target[targetIndex])
+		// We did not reach the end of the target slice
+		if targetIndex < lowest {
+			targetId, ok = TryGetObjectId(target[targetIndex])
 			if !ok {
 				log.Error("Error getting target ID")
 				return errors.New("Error getting target ID")
 			}
+		} else {
+			targetId = primitive.ObjectID{}
 		}
 
+		var compare int
 		// Compare the two IDs
-		compare := bytes.Compare(sourceId[:], targetId[:])
+		if !sourceId.IsZero() && !targetId.IsZero() {
+			compare = bytes.Compare(sourceId[:], targetId[:])
+		} else if sourceId.IsZero() && !targetId.IsZero() {
+			compare = 1
+		} else if !sourceId.IsZero() && targetId.IsZero() {
+			compare = -1
+		} else {
+			compare = 0
+		}
 
 		// The two IDs are the same. Update the target item
 		if compare == 0 {
 
-			log.Info("Updating document: ", source[sourceIndex])
-			err := synchronizer.Update(ctx, target[targetIndex], source[sourceIndex])
-			if err != nil {
-				log.Error("Error updating document: ", err)
-				return err
-			}
-
+			// The source ID is equal to the target ID
+			// ==> Update the target item
+			log.Info("Update document: ", source[sourceIndex])
+			r.itemsToUpdate = append(r.itemsToUpdate, source[sourceIndex])
+			lastSourceId = sourceId
 			sourceIndex++
 			targetIndex++
-
 		} else if compare > 0 {
 
-			if targetIndex >= targetCount {
-
-				// The source ID is lower than the target ID
-				// And we reached the end of the target slice
-				// ==> Add the source item to the target
-				err := synchronizer.Insert(ctx, source[sourceIndex])
-				if err != nil {
-					log.Error("Error inserting document: ", err)
-					return err
-				}
-				log.Info("Inserted document: ", targetId)
-				sourceIndex++
-			} else {
-
-				// The source ID is bigger than the target ID
-				// ==> Remove the target item
-				log.Info("Deleting document: ", target[targetIndex])
-
-				idToDelete, ok := getObjectId(target[targetIndex])
-				if !ok {
-					log.Error("Error getting target ID")
-					return errors.New("Error getting target ID")
-				}
-
-				err := synchronizer.Delete(ctx, idToDelete)
-				if err != nil {
-					log.Error("Error deleting document: ", err)
-					return err
-				}
-
-				targetIndex++
+			// The source ID is bigger than the target ID
+			// ==> Remove the target item
+			log.Info("Remove document: ", target[targetIndex])
+			idToDelete, ok := TryGetObjectId(target[targetIndex])
+			if !ok {
+				log.Error("Error getting target ID")
+				return errors.New("Error getting target ID")
 			}
 
+			r.itemsToDelete = append(r.itemsToDelete, idToDelete)
+			lastTargetId = targetId
+			targetIndex++
 		} else {
 
-			if sourceIndex >= sourceCount {
-
-				// The source ID is bigger than the target ID
-				// and we reached the end of the source slice
-				// ==> We need to remove the target item
-				log.Info("Deleting document: ", target[targetIndex])
-
-				idToDelete, ok := getObjectId(target[targetIndex])
-				if !ok {
-					log.Error("Error getting target ID")
-					return errors.New("Error getting target ID")
-				}
-
-				err := synchronizer.Delete(ctx, idToDelete)
-				if err != nil {
-					log.Error("Error deleting document: ", err)
-					return err
-				}
-
-				targetIndex++
-
-			} else {
-
-				// The source ID is lower than the target ID
-				// ==> Insert the source item to the target
-				err := synchronizer.Insert(ctx, source[sourceIndex])
-				log.Info("Inserting document: ", source[sourceIndex])
-				if err != nil {
-					log.Error("Error inserting document: ", err)
-					return err
-				}
-
-				sourceIndex++
-			}
+			// The source ID is lower than the target ID
+			// ==> Insert the source item to the target
+			log.Info("Insert document: ", source[sourceIndex])
+			r.itemsToInsert = append(r.itemsToInsert, source[sourceIndex])
+			lastSourceId = sourceId
+			sourceIndex++
 		}
+	}
+
+	// We reach the end of either the source or the target slice
+	// We need to handle the remaining items
+	if sourceCount > targetCount {
+
+		// The source slice is bigger than the target slice
+		// ==> Add the missing items
+		for index := targetCount; index < sourceCount; index++ {
+			log.Info("Insert document (ramasse miettes): ", source[index])
+			r.itemsToInsert = append(r.itemsToInsert, source[index])
+		}
+
+		r.firstId = GetObjectId(r.itemsToInsert[len(r.itemsToInsert)-1])
+
+	} else if sourceCount < targetCount {
+
+		// The target slice is bigger than the source slice
+		// ==> Remove the extra items
+		for index := sourceCount; index < targetCount; index++ {
+			log.Info("Delete document (ramasse miettes): ", target[index])
+			idToDelete, ok := TryGetObjectId(target[index])
+			if !ok {
+				log.Error("Error getting target ID")
+				return errors.New("Error getting target ID")
+			}
+			r.itemsToDelete = append(r.itemsToDelete, idToDelete)
+		}
+
+		r.firstId = r.itemsToDelete[len(r.itemsToDelete)-1]
+	}
+
+	if !lastSourceId.IsZero() && !lastTargetId.IsZero() {
+		compare := bytes.Compare(lastSourceId[:], lastTargetId[:])
+		if compare >= 0 {
+			r.firstId = lastTargetId
+		} else {
+			r.firstId = lastSourceId
+		}
+	} else if lastSourceId.IsZero() && !lastTargetId.IsZero() {
+		r.firstId = lastTargetId
+	} else if !lastSourceId.IsZero() && lastTargetId.IsZero() {
+		r.firstId = lastSourceId
 	}
 
 	return nil
 }
 
-func getObjectId(document *bson.D) (primitive.ObjectID, bool) {
+func TryGetObjectId(document *bson.D) (primitive.ObjectID, bool) {
 	for _, elem := range *document {
 		if elem.Key == "_id" {
 			if oid, ok := elem.Value.(primitive.ObjectID); ok {
@@ -212,4 +270,15 @@ func getObjectId(document *bson.D) (primitive.ObjectID, bool) {
 		}
 	}
 	return primitive.ObjectID{}, false
+}
+
+func GetObjectId(document *bson.D) primitive.ObjectID {
+	for _, elem := range *document {
+		if elem.Key == "_id" {
+			if oid, ok := elem.Value.(primitive.ObjectID); ok {
+				return oid
+			}
+		}
+	}
+	return primitive.ObjectID{}
 }

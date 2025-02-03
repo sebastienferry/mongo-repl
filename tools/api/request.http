@@ -7,9 +7,9 @@ POST http://localhost:3000/command/incr/resume
 
 ###
 
-POST http://localhost:3000/command/snapshot
+POST http://cachedb120j:3000/command/snapshot
 Content-Type: application/json
 
 [
-    { "database": "Animals", "collection": "Items" }
+    { "database": "DeliveryCache", "collection": "sites" }
 ]

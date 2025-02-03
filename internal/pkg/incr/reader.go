@@ -128,12 +128,16 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 			// And have this thread to be waiting for it ?
 			// Should we store some state (the snapshot queue) in the database ?
 			requested := r.snapshots.Dequeue()
-			snapshot.SynchronizeCollection(ctx,
-				1000,
+			snapshot := snapshot.NewDeltaReplication(
 				snapshot.NewMongoItemReader(mdb.Registry.GetSource(), requested.Database, requested.Collection),
 				snapshot.NewMongoItemReader(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				snapshot.NewMongoSynchronizer(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				requested.Database, requested.Collection)
+				snapshot.NewMongoWriter(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
+				requested.Database, requested.Collection, false, 10000)
+
+			err := snapshot.SynchronizeCollection(ctx)
+			if err != nil {
+				log.Error("Error during snapshot: ", err)
+			}
 		}
 
 		// Get the oplog cursor

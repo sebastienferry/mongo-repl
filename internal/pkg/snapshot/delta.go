@@ -49,12 +49,6 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 	// Loop until there are no more items to sync
 	for {
 
-		log.InfoWithFields("Snapshot execution", log.Fields{
-			"batch":      r.currentBatch,
-			"database":   r.Database,
-			"collection": r.Collection,
-		})
-
 		// Read from source
 		source, err := r.SourceReader.ReadItems(ctx, r.BatchSize, r.firstId)
 		if err != nil {
@@ -80,9 +74,17 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 		}
 
 		if len(source) == 0 && len(target) == 0 {
-			log.Debug("No more items to sync")
+			log.InfoWithFields("No more items to sync", log.Fields{
+				"database":   r.Database,
+				"collection": r.Collection})
 			break
 		}
+
+		log.InfoWithFields("Snapshot execution", log.Fields{
+			"batch":      r.currentBatch,
+			"database":   r.Database,
+			"collection": r.Collection,
+		})
 
 		// Compare the two slices : source and target
 		// Compute the list of items to insert, update and delete
@@ -185,7 +187,7 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is equal to the target ID
 			// ==> Update the target item
-			log.Info("Update document: ", source[sourceIndex])
+			//log.Info("Update document: ", source[sourceIndex])
 			r.itemsToUpdate = append(r.itemsToUpdate, source[sourceIndex])
 			lastSourceId = sourceId
 			sourceIndex++
@@ -194,7 +196,7 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is bigger than the target ID
 			// ==> Remove the target item
-			log.Info("Remove document: ", target[targetIndex])
+			//log.Info("Remove document: ", target[targetIndex])
 			idToDelete, ok := TryGetObjectId(target[targetIndex])
 			if !ok {
 				log.Error("Error getting target ID")
@@ -208,7 +210,7 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is lower than the target ID
 			// ==> Insert the source item to the target
-			log.Info("Insert document: ", source[sourceIndex])
+			//log.Info("Insert document: ", source[sourceIndex])
 			r.itemsToInsert = append(r.itemsToInsert, source[sourceIndex])
 			lastSourceId = sourceId
 			sourceIndex++
@@ -222,7 +224,7 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 		// The source slice is bigger than the target slice
 		// ==> Add the missing items
 		for index := targetCount; index < sourceCount; index++ {
-			log.Info("Insert document (ramasse miettes): ", source[index])
+			// log.Debug("Insert document (ramasse miettes): ", source[index])
 			r.itemsToInsert = append(r.itemsToInsert, source[index])
 		}
 

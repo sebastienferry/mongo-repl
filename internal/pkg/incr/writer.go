@@ -95,7 +95,7 @@ func (w *OplogWriterSingle) RunWriter(ctx context.Context) {
 				id = pid
 			}
 			// Display some debug information
-			debugLog(id, &l.ParsedLog)
+			// debugLog(id, &l.ParsedLog)
 		}
 
 		// Handle the operation

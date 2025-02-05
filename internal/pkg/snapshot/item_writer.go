@@ -141,7 +141,7 @@ func (w *MongoItemWriter) upsertManyInternal(ctx context.Context, items []*bson.
 	}
 
 	if config.Current.Logging.Level == log.DebugLevel {
-		log.DebugWithFields("Updating documents",
+		log.InfoWithFields("Synching documents",
 			log.Fields{
 				"database":   w.Database,
 				"collection": w.Collection,

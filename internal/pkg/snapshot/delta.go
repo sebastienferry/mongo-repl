@@ -123,7 +123,7 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 				return err
 			}
 
-			// Update the progress
+			// Update the progress and metrics
 			progress.Increment(inserted.InsertedCount)
 			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.InsertOp).Add(float64(inserted.InsertedCount))
 			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.InsertOp).Add(float64(inserted.ErrorCount))
@@ -136,7 +136,7 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 				return err
 			}
 
-			// Update the progress
+			// Update the progress and metrics
 			progress.Increment(updated.UpdatedCount)
 			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.UpdateOp).Add(float64(updated.UpdatedCount))
 			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.UpdateOp).Add(float64(updated.ErrorCount))
@@ -149,14 +149,13 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 				return err
 			}
 
-			// Update the progress
-			progress.Increment(deleted.DeletedCount)
+			// Update the metrics, but not the progress.
+			// Do not count the items to delete in the progress, only upsert to avoid goind over 100%
 			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.DeleteOp).Add(float64(deleted.DeletedCount))
 			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.DeleteOp).Add(float64(deleted.ErrorCount))
 		}
 
 		// Do not count the items to delete in the progress, only upsert to avoid goind over 100%
-		progress.Increment(len(r.itemsToInsert) + len(r.itemsToUpdate))
 		metrics.SnapshotProgressGauge.WithLabelValues(r.Database, r.Collection).Set(progress.Progress())
 		r.currentBatch++
 	}

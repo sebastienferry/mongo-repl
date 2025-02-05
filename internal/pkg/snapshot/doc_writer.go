@@ -28,17 +28,10 @@ func NewDocumentWriter(database string, collection string, target *mdb.MDB) *Doc
 	}
 }
 
-type WriteResult struct {
-	InsertedCount           int
-	UpdatedCount            int
-	SkippedOnDuplicateCount int
-	ErrorCount              int
-}
-
 // Sync the documents to the target
-func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (WriteResult, error) {
+func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 
-	var result WriteResult = WriteResult{}
+	var result BulkResult = BulkResult{}
 
 	if len(docs) == 0 {
 		log.Debug("No documents to sync")

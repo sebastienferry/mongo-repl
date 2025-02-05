@@ -128,12 +128,16 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 			// And have this thread to be waiting for it ?
 			// Should we store some state (the snapshot queue) in the database ?
 			requested := r.snapshots.Dequeue()
-			snapshot.SynchronizeCollection(ctx,
-				1000,
+			snapshot := snapshot.NewDeltaReplication(
 				snapshot.NewMongoItemReader(mdb.Registry.GetSource(), requested.Database, requested.Collection),
 				snapshot.NewMongoItemReader(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				snapshot.NewMongoSynchronizer(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				requested.Database, requested.Collection)
+				snapshot.NewMongoWriter(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
+				requested.Database, requested.Collection, false, 10000)
+
+			err := snapshot.SynchronizeCollection(ctx)
+			if err != nil {
+				log.Error("Error during snapshot: ", err)
+			}
 		}
 
 		// Get the oplog cursor
@@ -186,7 +190,6 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 
 				// Filter out unwanted commands
 				command, found := ExtraCommandName(l.Object)
-				log.Debug("Command: ", command)
 				if found && KeepOperation(command) {
 
 					cmd := l.Object
@@ -226,17 +229,17 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 						}
 					}
 
-					r.queue <- &oplog.ChangeLog{
-						ParsedLog:  l,
-						Db:         db,
-						Collection: coll,
-					}
-
 					// Update the checkpoint
 					r.latest = l.Timestamp
 
 					// TODO: Should we increment by the number of sub-commands?
 					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
+
+					// r.queue <- &oplog.ChangeLog{
+					// 	ParsedLog:  l,
+					// 	Db:         db,
+					// 	Collection: coll,
+					// }
 
 				} else {
 					// We are not interested in this command

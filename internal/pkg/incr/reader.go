@@ -190,7 +190,6 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 
 				// Filter out unwanted commands
 				command, found := ExtraCommandName(l.Object)
-				log.Debug("Command: ", command)
 				if found && KeepOperation(command) {
 
 					cmd := l.Object
@@ -230,17 +229,17 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 						}
 					}
 
-					r.queue <- &oplog.ChangeLog{
-						ParsedLog:  l,
-						Db:         db,
-						Collection: coll,
-					}
-
 					// Update the checkpoint
 					r.latest = l.Timestamp
 
 					// TODO: Should we increment by the number of sub-commands?
 					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
+
+					// r.queue <- &oplog.ChangeLog{
+					// 	ParsedLog:  l,
+					// 	Db:         db,
+					// 	Collection: coll,
+					// }
 
 				} else {
 					// We are not interested in this command

@@ -47,17 +47,17 @@ func TestFilterApplyOps(t *testing.T) {
 		switch ele.Key {
 		case "applyOps":
 			// Filter out unwanted sub-commands
-			computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, bson.D{}, computedCmdSize)
+			computedCmd, computedCmdSize = SanitizeApplyOps(ele, KeepSubOp, bson.D{}, computedCmdSize)
 		}
 
 	}
 
 	if computedCmdSize != 3 {
-		t.Errorf("FilterApplyOps() = %d; want 3", computedCmdSize)
+		t.Errorf("filterApplyOps() = %d; want 3", computedCmdSize)
 	}
 
 	if len(computedCmd[0].Value.(bson.A)) != 3 {
-		t.Errorf("FilterApplyOps() = %d; want 1", len(computedCmd))
+		t.Errorf("filterApplyOps() = %d; want 1", len(computedCmd))
 	}
 }
 
@@ -93,7 +93,7 @@ func TestFilterSubOps(t *testing.T) {
 	for _, doc := range applyOpsDoc {
 
 		if KeepSubOp(doc.Doc) != doc.Allowed {
-			t.Errorf("FilterSubOps() = false; want true")
+			t.Errorf("filterSubOps() = false; want true")
 		}
 	}
 

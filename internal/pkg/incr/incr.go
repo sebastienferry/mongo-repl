@@ -30,17 +30,17 @@ func (o *Incr) RunIncremental(ctx context.Context) {
 	// Get the starting timestamp
 	startingTimestamp, err := o.ckpt.GetCheckpoint(context.TODO())
 	if err != nil {
-		log.Fatal("Error getting the checkpoint: ", err)
+		log.Fatal("error getting the checkpoint: ", err)
 	}
 
 	// Check the starting timestamp is within the boundaries of the oplog
 	oplogBoundaries, err := checkpoint.GetReplicasetOplogWindow()
 	if err != nil {
-		log.Fatal("Error computing the last checkpoint: ", err)
+		log.Fatal("error computing the last checkpoint: ", err)
 	}
 
 	if startingTimestamp.LatestTs.Compare(oplogBoundaries.Oldest) < 0 {
-		log.Fatal("The starting timestamp is older than the oldest timestamp in the oplog")
+		log.Fatal("the starting timestamp is older than the oldest timestamp in the oplog")
 	}
 
 	o.latestTs = checkpoint.FromInt64(startingTimestamp.LatestLSN)
@@ -64,7 +64,7 @@ func (o *Incr) RunIncremental(ctx context.Context) {
 			// case cmd := <-o.cmdc:
 			// 	switch cmd.Id {
 			// 	case commands.CmdIdTerminate:
-			// 		log.Info("Received termination command")
+			// 		log.Info("received termination command")
 			// 		ctx.Done()
 			// 	}
 			// }

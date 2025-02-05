@@ -26,7 +26,7 @@ var Registry *MongoRegistry = nil
 func (m *MongoRegistry) GetSource() *MDB {
 
 	if m.source == nil {
-		log.Fatal("Source is nil")
+		log.Fatal("source is nil")
 	}
 	return m.source
 }
@@ -34,7 +34,7 @@ func (m *MongoRegistry) GetSource() *MDB {
 func (m *MongoRegistry) GetTarget() *MDB {
 
 	if m.target == nil {
-		log.Fatal("Target is nil")
+		log.Fatal("target is nil")
 	}
 	return m.target
 }

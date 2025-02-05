@@ -21,10 +21,10 @@ func (a *CommandApi) PauseIncrReplication(c *gin.Context) {
 	// Pause the incremental replication
 	select {
 	case a.commands <- commands.CmdPauseIncremental:
-		log.Info("Pause command sent")
+		log.Info("pause command sent")
 		c.Status(200)
 	default:
-		log.Info("Pause command not sent")
+		log.Info("pause command not sent")
 		// Proably due to too much commands enqueued
 		c.Status(429)
 	}
@@ -35,10 +35,10 @@ func (a *CommandApi) ResumeIncrReplication(c *gin.Context) {
 	// Resume the incremental replication
 	select {
 	case a.commands <- commands.CmdResumeIncremental:
-		log.Info("Resume command sent")
+		log.Info("resume command sent")
 		c.Status(200)
 	default:
-		log.Info("Resume command not sent")
+		log.Info("resume command not sent")
 		// Proably due to too much commands enqueued
 		c.Status(429)
 	}
@@ -53,7 +53,7 @@ func (a *CommandApi) RunSnapshot(c *gin.Context) {
 
 	var snapshops []SnapshotRequest
 	if err := c.ShouldBindBodyWithJSON(&snapshops); err != nil || len(snapshops) <= 0 {
-		log.ErrorWithFields("Error when triggering snapshop",
+		log.ErrorWithFields("error when triggering snapshop",
 			log.Fields{"collection": "collection", "error": err})
 
 		c.Status(500)
@@ -63,10 +63,10 @@ func (a *CommandApi) RunSnapshot(c *gin.Context) {
 	for _, snapshot := range snapshops {
 		select {
 		case a.commands <- commands.NewCmdSnapshot(snapshot.Database, snapshot.Collection):
-			log.InfoWithFields("Snaphot command sent",
+			log.InfoWithFields("snaphot command sent",
 				log.Fields{"database": snapshot.Database, "collection": snapshot.Collection})
 		default:
-			log.Error("Snaphot command not sent")
+			log.Error("snaphot command not sent")
 			success = false
 		}
 	}

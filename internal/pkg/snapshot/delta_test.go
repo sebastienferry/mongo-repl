@@ -6,19 +6,18 @@ import (
 	"log"
 	"testing"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mocks"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// Convert the bytes as 12 bytes arrays
 func CreateTestData(items ...byte) []*bson.D {
-
 	var data []*bson.D
 	for _, i := range items {
-		data = append(data, &bson.D{{"_id", primitive.ObjectID([12]byte{
-			// Convert the int to a 12 bytes array
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, i})}})
+		data = append(data, &bson.D{{Key: "_id",
+			Value: primitive.ObjectID([12]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, i})}})
 	}
-
 	return data
 }
 
@@ -80,9 +79,9 @@ func TestCompareAndSync(t *testing.T) {
 
 		for _, d := range data {
 
-			log.Printf("Case: %s, Batch size %d\n", d.name, batchSize)
-			source := NewMockDatabase(d.source)
-			target := NewMockDatabase(d.target)
+			log.Printf("case: %s, Batch size %d\n", d.name, batchSize)
+			source := mocks.NewMockDatabase(d.source)
+			target := mocks.NewMockDatabase(d.target)
 			//writer := NewMockDatabase(d.target)
 
 			synchronization := NewDeltaReplication(source, target, target, "test", "test", false, batchSize)
@@ -90,7 +89,7 @@ func TestCompareAndSync(t *testing.T) {
 
 			// Check if the data was inserted
 			if len(target.Items) != d.expected {
-				t.Errorf(fmt.Sprintf("Case %s, Expected %d item, got", d.name, d.expected), len(target.Items))
+				t.Errorf(fmt.Sprintf("case %s, Expected %d item, got", d.name, d.expected), len(target.Items))
 			}
 		}
 

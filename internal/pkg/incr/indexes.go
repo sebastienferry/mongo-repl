@@ -12,7 +12,7 @@ import (
 // Create indexes on a collection using the createIndexes command
 func RunCommandCreateIndexes(database string, l *oplog.ChangeLog, client *mongo.Client) error {
 
-	log.DebugWithFields("Execute DDL command", log.Fields{"command": "createIndexes"})
+	log.DebugWithFields("execute DDL command", log.Fields{"command": "createIndexes"})
 
 	var collection string
 	var indexes bson.A
@@ -39,7 +39,7 @@ func RunCommandCreateIndexes(database string, l *oplog.ChangeLog, client *mongo.
 
 func RunCommandDropIndexes(database string, l *oplog.ChangeLog, client *mongo.Client) error {
 
-	log.DebugWithFields("Execute DDL command", log.Fields{"command": "dropIndexes"})
+	log.DebugWithFields("execute DDL command", log.Fields{"command": "dropIndexes"})
 
 	var collection string
 	var index string
@@ -75,7 +75,7 @@ func RunCommand(database, command string, l *oplog.ChangeLog, client *mongo.Clie
 	case "dropIndexes":
 		return RunCommandDropIndexes(database, l, client)
 	default:
-		log.DebugWithFields("Unkknow command", log.Fields{"command": command})
+		log.DebugWithFields("unkknow command", log.Fields{"command": command})
 	}
 	return nil
 }

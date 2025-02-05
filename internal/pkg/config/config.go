@@ -32,6 +32,10 @@ type ReplConfig struct {
 	// The address of the MongoDB server
 	Target string `json:"Target" yaml:"target"`
 
+	// Features flags
+	Features        []string        `yaml:"features"`
+	FeaturesEnabled map[string]bool `yaml:"-"`
+
 	// The list of databases to replicate
 	Databases   []string        `yaml:"databases"`
 	DatabasesIn map[string]bool `yaml:"-"`
@@ -102,6 +106,12 @@ func (c *AppConfig) LoadConfig() error {
 		c.Repl.Target = os.Getenv("TARGET")
 	}
 
+	// Features
+	c.Repl.FeaturesEnabled = make(map[string]bool)
+	for _, feature := range c.Repl.Features {
+		c.Repl.FeaturesEnabled[feature] = true
+	}
+
 	// Databases to replicate
 	c.Repl.DatabasesIn = make(map[string]bool)
 	for _, db := range c.Repl.Databases {
@@ -123,10 +133,10 @@ func (c *AppConfig) LoadConfig() error {
 }
 
 func (c *AppConfig) LogConfig() {
-	log.Info("MongoDB configuration:")
-	log.Info("- Source: ", ObfuscateCrendentials(c.Repl.Source))
-	log.Info("- Target: ", ObfuscateCrendentials(c.Repl.Target))
-	log.Info("Databases to replicate:")
+	log.Info("mongo configuration:")
+	log.Info("- source: ", ObfuscateCrendentials(c.Repl.Source))
+	log.Info("- target: ", ObfuscateCrendentials(c.Repl.Target))
+	log.Info("databases to replicate:")
 	for _, db := range c.Repl.Databases {
 		log.Info("- ", db)
 	}

@@ -1,10 +1,12 @@
-package snapshot
+package mocks
 
 import (
 	"bytes"
 	"context"
 	"slices"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/interfaces"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
@@ -21,12 +23,16 @@ func NewMockDatabase(items []*bson.D) *MockDatabase {
 
 func getIndexById(items []*bson.D, id primitive.ObjectID) (int, bool) {
 	return slices.BinarySearchFunc(items, id, func(e *primitive.D, t primitive.ObjectID) int {
-		val, ok := TryGetObjectId(e)
+		val, ok := mdb.TryGetObjectId(*e)
 		if !ok {
-			panic("Item does not have an ID")
+			panic("item does not have an ID")
 		}
 		return bytes.Compare(val[:], id[:])
 	})
+}
+
+func (r *MockDatabase) Count(ctx context.Context) (int64, error) {
+	return int64(len(r.Items)), nil
 }
 
 func (r *MockDatabase) ReadItems(ctx context.Context, batchSize int, boundaries ...primitive.ObjectID) ([]*bson.D, error) {
@@ -35,7 +41,7 @@ func (r *MockDatabase) ReadItems(ctx context.Context, batchSize int, boundaries 
 		return nil, nil
 	}
 
-	first, last := getBoundariesIds(boundaries...)
+	first, last := mdb.ComputeIdsWindow(boundaries...)
 
 	// Get the index of the first element
 	start, found := getIndexById(r.Items, first)
@@ -48,7 +54,7 @@ func (r *MockDatabase) ReadItems(ctx context.Context, batchSize int, boundaries 
 
 	end := 0
 	for i := start + 1; i < len(r.Items); i++ {
-		oid, _ := TryGetObjectId(r.Items[i])
+		oid, _ := mdb.TryGetObjectId(*r.Items[i])
 		if (i-start) == batchSize || (!last.IsZero() && bytes.Compare(oid[:], last[:]) > 0) {
 			end = i
 			break
@@ -64,13 +70,13 @@ func (r *MockDatabase) ReadItems(ctx context.Context, batchSize int, boundaries 
 
 func (s *MockDatabase) Insert(ctx context.Context, item *primitive.D) error {
 
-	oid := GetObjectId(item)
+	oid := mdb.GetObjectId(*item)
 	index := slices.IndexFunc(s.Items, func(i *bson.D) bool {
-		val, ok := TryGetObjectId(i)
+		val, ok := mdb.TryGetObjectId(*i)
 		if !ok {
-			panic("Item does not have an ID")
+			panic("item does not have an ID")
 		}
-		return bytes.Compare(val[:], oid[:]) == 0
+		return bytes.Equal(val[:], oid[:])
 	})
 
 	if index >= 0 {
@@ -82,16 +88,16 @@ func (s *MockDatabase) Insert(ctx context.Context, item *primitive.D) error {
 
 	s.Items = append(s.Items, item)
 	slices.SortFunc(s.Items, func(i, j *bson.D) int {
-		ii, _ := TryGetObjectId(i)
-		jj, _ := TryGetObjectId(j)
+		ii, _ := mdb.TryGetObjectId(*i)
+		jj, _ := mdb.TryGetObjectId(*j)
 		return bytes.Compare(ii[:], jj[:])
 	})
 	return nil
 }
 
-func (s *MockDatabase) InsertMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
+func (s *MockDatabase) InsertMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
-	var result = BulkResult{}
+	var result = interfaces.BulkResult{}
 	for _, item := range items {
 		s.Insert(ctx, item)
 		result.InsertedCount++
@@ -103,9 +109,9 @@ func (s *MockDatabase) Update(ctx context.Context, source *primitive.D, target *
 	return nil
 }
 
-func (s *MockDatabase) UpdateMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
+func (s *MockDatabase) UpdateMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
-	var result = BulkResult{}
+	var result = interfaces.BulkResult{}
 	for _, item := range items {
 		s.Update(ctx, item, item)
 		result.UpdatedCount++
@@ -116,11 +122,11 @@ func (s *MockDatabase) UpdateMany(ctx context.Context, items []*bson.D) (BulkRes
 func (s *MockDatabase) Delete(ctx context.Context, id primitive.ObjectID) error {
 
 	index := slices.IndexFunc(s.Items, func(i *bson.D) bool {
-		val, ok := TryGetObjectId(i)
+		val, ok := mdb.TryGetObjectId(*i)
 		if !ok {
-			panic("Item does not have an ID")
+			panic("item does not have an ID")
 		}
-		return bytes.Compare(val[:], id[:]) == 0
+		return bytes.Equal(val[:], id[:])
 	})
 
 	if index >= 0 {
@@ -129,9 +135,9 @@ func (s *MockDatabase) Delete(ctx context.Context, id primitive.ObjectID) error 
 	return nil
 }
 
-func (s *MockDatabase) DeleteMany(ctx context.Context, ids []primitive.ObjectID) (BulkResult, error) {
+func (s *MockDatabase) DeleteMany(ctx context.Context, ids []primitive.ObjectID) (interfaces.BulkResult, error) {
 
-	var result = BulkResult{}
+	var result = interfaces.BulkResult{}
 	for _, item := range ids {
 		s.Delete(ctx, item)
 		result.DeletedCount++
@@ -139,6 +145,6 @@ func (s *MockDatabase) DeleteMany(ctx context.Context, ids []primitive.ObjectID)
 	return result, nil
 }
 
-func (s *MockDatabase) WriteMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
-	return BulkResult{}, nil
+func (s *MockDatabase) WriteMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
+	return interfaces.BulkResult{}, nil
 }

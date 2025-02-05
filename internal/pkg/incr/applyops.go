@@ -2,7 +2,7 @@ package incr
 
 import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/oplog"
@@ -16,8 +16,8 @@ const (
 	ApplyOps = "applyOps"
 )
 
-// Filter an applyOps command sub-operations
-func FilterApplyOps(ele primitive.E, keepSubOp func(primitive.D) bool, computedCmd primitive.D, computedCmdSize int) (primitive.D, int) {
+// Filter command sub-operations.
+func SanitizeApplyOps(ele primitive.E, keepSubOp func(primitive.D) bool, computedCmd primitive.D, computedCmdSize int) (primitive.D, int) {
 	var j = 0
 	switch subOps := ele.Value.(type) {
 	case bson.A:
@@ -43,17 +43,17 @@ func FilterApplyOps(ele primitive.E, keepSubOp func(primitive.D) bool, computedC
 func KeepSubOp(doc bson.D) bool {
 
 	// Filter the op
-	op := GetKey(doc, "op").(string)
-	allowed, found := filter.Lookup(filter.AllowedOperationsForApplyOps, op)
+	op := mdb.GetKey(doc, "op").(string)
+	allowed, found := filters.Lookup(filters.AllowedOperationsForApplyOps, op)
 	if !found || !allowed {
 		return false
 	}
 
 	// Filter the namespace
-	ns := GetKey(doc, "ns")
+	ns := mdb.GetKey(doc, "ns")
 	subDb, subColl := oplog.GetDbAndCollection(ns.(string))
 
-	return filter.ShouldReplicateNamespace(
+	return filters.ShouldReplicateNamespace(
 		config.Current.Repl.DatabasesIn,
 		config.Current.Repl.FiltersIn,
 		config.Current.Repl.FiltersOut,
@@ -67,7 +67,7 @@ func RunCommandApplyOps(database string, l *oplog.ChangeLog, client *mongo.Clien
 	 */
 	var store bson.D
 	for _, ele := range l.Object {
-		if ApplyOpsFilter(ele.Key) {
+		if mdb.ApplyOpsFilter(ele.Key) {
 			continue
 		}
 		if ele.Key == "applyOps" {
@@ -78,12 +78,12 @@ func RunCommandApplyOps(database string, l *oplog.ChangeLog, client *mongo.Clien
 
 					//TODO: Filter out the unwated collection.
 
-					v[i] = RemoveField(doc, Uuid)
+					v[i] = mdb.RemoveField(doc, Uuid)
 				}
 			case []interface{}:
 				for i, ele := range v {
 					doc := ele.(bson.D)
-					v[i] = RemoveField(doc, Uuid)
+					v[i] = mdb.RemoveField(doc, Uuid)
 				}
 			case bson.D:
 				ret := make(bson.D, 0, len(v))
@@ -113,7 +113,7 @@ func RunCommandApplyOps(database string, l *oplog.ChangeLog, client *mongo.Clien
 	}
 
 	if singleResult.Err() != nil {
-		log.ErrorWithFields("Error running applyOps command", log.Fields{"error": singleResult.Err()})
+		log.ErrorWithFields("error running applyOps command", log.Fields{"error": singleResult.Err()})
 	} else {
 		log.DebugWithFields("command executed", log.Fields{"command": store, "applied": content["applied"].(int32)})
 	}

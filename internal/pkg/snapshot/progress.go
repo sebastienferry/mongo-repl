@@ -3,8 +3,8 @@ package snapshot
 type SyncProgress struct {
 	Database   string
 	Collection string
-	total      uint64
-	processed  uint64
+	total      int64
+	processed  int64
 }
 
 func NewSyncProgress(database string, collection string) *SyncProgress {
@@ -14,12 +14,12 @@ func NewSyncProgress(database string, collection string) *SyncProgress {
 	}
 }
 
-func (f *SyncProgress) SetTotal(total uint64) {
+func (f *SyncProgress) SetTotal(total int64) {
 	f.total = total
 }
 
 func (f *SyncProgress) Increment(incr int) {
-	f.processed += uint64(incr)
+	f.processed += int64(incr)
 }
 
 func (f *SyncProgress) Progress() float64 {

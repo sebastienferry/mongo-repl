@@ -15,15 +15,24 @@ var res struct {
 	StorageSize float64 `bson:"storageSize"`
 }
 
-// Get statistics of a collection
-func GetStatsByCollection(r *MDB, database, collection string) (uint64, error) {
+// Get statistics of a collection.
+// Deprecated: Use `GetDocumentCountByCollection` instead.
+func GetStatsByCollection(r *MDB, database, collection string) (int64, error) {
 	if err := r.Client.Database(database).RunCommand(nil,
 		bson.D{{"collStats", collection}}).Decode(&res); err != nil {
-		log.Error("Error getting collection stats: ", err)
+		log.Error("error getting collection stats: ", err)
 		return 0, err
 	}
 
-	return uint64(res.Count), nil
+	return res.Count, nil
+}
+
+// Get the number of documents in a collection.
+// The function uses the `countDocuments` command to get the number of documents in a collection.
+// The database and collection are passed as arguments.
+// This function replaces the deprecated `count` method.
+func GetDocumentCountByCollection(r *MDB, database, collection string) (int64, error) {
+	return r.Client.Database(database).Collection(collection).CountDocuments(context.Background(), bson.D{})
 }
 
 // List the collections of a database
@@ -44,7 +53,7 @@ func GetCollections(ctx context.Context, databases []string) (map[string][]strin
 	for _, db := range databases {
 		c, err := GetCollectionsByDb(ctx, db, Registry.GetSource())
 		if err != nil {
-			log.Fatal("Error getting the list of collections to replicate: ", err)
+			log.Fatal("error getting the list of collections to replicate: ", err)
 			return nil, err
 		}
 		collections[db] = c
@@ -68,7 +77,7 @@ func GetIndexesByDb(ctx context.Context, database string, collection string) ([]
 // func CreateIndex(ctx context.Context, database string, collection string, index bson.M) error {
 // 	_, err := Registry.GetTarget().Client.Database(database).Collection(collection).Indexes().CreateOne(ctx, index)
 // 	if err != nil {
-// 		log.Error("Error creating the index: ", err)
+// 		log.Error("error creating the index: ", err)
 // 		return err
 // 	}
 // 	return nil

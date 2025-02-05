@@ -53,13 +53,6 @@ func NewMongoCheckpointService(name string, ckptDb string, ckptColl string) *Mon
 
 func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error) {
 
-	// Create a new client and connect to the server
-	//connectOpts := options.Client().ApplyURI(config.Current.Repl.Target)
-	// client, err := mongo.Connect(ctx, connectOpts)
-	// if err != nil {
-	// 	log.Fatal("Error connecting to the server: ", err)
-	// }
-
 	db := mdb.Registry.GetTarget().Client.Database(s.DB)
 	collection := db.Collection(s.Collection)
 
@@ -73,15 +66,14 @@ func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error)
 		if err == mongo.ErrNoDocuments {
 			return Checkpoint{}, nil
 		}
-		log.Fatal("Error fetching the last LSN synched: ", err)
+		log.Fatal("error fetching the last LSN synched: ", err)
 	}
 
 	// Decode the result
-	// var lsn *Lsn
 	var ckpt Checkpoint = Checkpoint{}
 	err = result.Decode(&ckpt)
 	if err != nil {
-		log.Fatal("Error decoding the result: ", err)
+		log.Fatal("error decoding the result: ", err)
 	}
 
 	s.Current = ckpt
@@ -104,7 +96,7 @@ func (s *MongoCheckpoint) SetCheckpoint(ctx context.Context, ts primitive.Timest
 func (s *MongoCheckpoint) MoveCheckpointForward(ts primitive.Timestamp) {
 
 	if ts.T == 0 || ts.T < s.Current.LatestTs.T {
-		log.Warn("Invalid timestamp: ", ts)
+		log.Warn("invalid timestamp: ", ts)
 		return
 	}
 
@@ -128,7 +120,7 @@ func (s *MongoCheckpoint) saveCheckpoint(ctx context.Context) error {
 
 	_, err := mdb.Registry.GetTarget().Client.Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
 	if err != nil {
-		log.WarnWithFields("Checkpoint upsert error", log.Fields{
+		log.WarnWithFields("checkpoint upsert error", log.Fields{
 			"checkpoint": s.Current.Name,
 			"updates":    update,
 			"error":      err,
@@ -144,7 +136,7 @@ func (s *MongoCheckpoint) StartAutosave(ctx context.Context) {
 
 func (s *MongoCheckpoint) RunAutosave(context.Context) {
 
-	log.Info("Starting autosave")
+	log.Info("starting autosave")
 	go func() {
 		for {
 
@@ -157,7 +149,7 @@ func (s *MongoCheckpoint) RunAutosave(context.Context) {
 
 			// Store the checkpoint
 			s.saveCheckpoint(context.Background())
-			log.Info("Checkpoint autosaved: ", s.Current)
+			log.Info("checkpoint autosaved: ", s.Current)
 			time.Sleep(10 * time.Second)
 		}
 	}()

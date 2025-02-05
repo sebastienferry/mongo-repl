@@ -15,6 +15,7 @@ import (
 	"fmt"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
@@ -88,9 +89,9 @@ func (w *OplogWriterSingle) RunWriter(ctx context.Context) {
 		// Try to get the object id
 		var id interface{}
 		if l.Operation != "c" {
-			pid, _ := GetObjectId(l.Object)
+			pid, _ := mdb.TryGetObjectId(l.Object)
 			if pid.IsZero() && len(l.Query) > 0 {
-				id = GetKey(l.Query, "_id")
+				id = mdb.GetKey(l.Query, "_id")
 			} else {
 				id = pid
 			}
@@ -163,7 +164,7 @@ func (w *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 	if upsert && len(l.ParsedLog.DocumentKey) > 0 {
 		id = l.ParsedLog.DocumentKey
 	} else {
-		id = GetKey(l.ParsedLog.Object, "")
+		id = mdb.GetKey(l.ParsedLog.Object, "")
 		if id != nil {
 			id = bson.D{{"_id", id}}
 		} else {
@@ -222,12 +223,12 @@ func (w *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 	var res *mongo.UpdateResult
 
 	// Below we check if the object has a version mark which is identified by "$v"
-	if FindFiledPrefix(l.Object, "$v") {
+	if mdb.FindFiledPrefix(l.Object, "$v") {
 
 		// To keep track of the update
 		var update interface{}
 		var oplogErr error
-		if update, oplogErr = DiffUpdateOplogToNormal(l.Object); oplogErr != nil {
+		if update, oplogErr = mdb.DiffUpdateOplogToNormal(l.Object); oplogErr != nil {
 			log.ErrorWithFields("Update failed", log.Fields{
 				"err":     oplogErr,
 				"org_doc": l.Object,
@@ -294,7 +295,7 @@ func (ow *OplogWriterSingle) Delete(l *oplog.ChangeLog) error {
 func (w *OplogWriterSingle) Command(l *oplog.ChangeLog) error {
 
 	// Extract the sub-command
-	if command, found := ExtraCommandName(l.ParsedLog.Object); found && KeepOperation(command) {
+	if command, found := mdb.ExtraCommandName(l.ParsedLog.Object); found && filters.KeepOperation(command) {
 
 		var err error
 		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().Client); err == nil {

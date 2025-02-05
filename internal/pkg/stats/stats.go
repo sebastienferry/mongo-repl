@@ -43,7 +43,7 @@ func (c *CollectionStats) StartCollectionStats(ctx context.Context) {
 			if iter%4 == 0 {
 				cols, err := mdb.GetCollections(ctx, config.Current.Repl.Databases)
 				if err != nil {
-					log.Error("Error getting the list of collections to replicate: ", err)
+					log.Error("error getting the list of collections to replicate: ", err)
 					continue
 				}
 				c.collections = cols

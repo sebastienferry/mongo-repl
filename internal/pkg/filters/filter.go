@@ -63,20 +63,23 @@ func ShouldReplicateNamespace(
 	collectionsOut map[string]bool,
 	db string, collection string) bool {
 
-	// Check if the database is part of the one we are targeting
-	if ok := databasesIn[db]; !ok {
+	// If the database is not in the list of databases to replicate, return false
+	if _, found := databasesIn[db]; !found {
 		return false
 	}
 
-	if len(collectionsIn) > 0 {
-		// If we include collections explicitly, check if the collection is in
-		val, found := Lookup(collectionsIn, collection)
-		return found && val
-	} else if len(collectionsOut) > 0 {
-		// If we exclude collections explicitly, check if the collection is not out
-		val, found := Lookup(collectionsIn, collection)
-		return !found || !val
+	// If the collection is in the list of collections to replicate, return true
+	// CollectionsIn get the precedence over CollectionsOut !
+	if _, found := collectionsIn[collection]; found {
+		return true
 	}
+
+	// If the collection is in the list of collections to filter out, return false
+	if _, found := collectionsOut[collection]; found {
+		return false
+	}
+
+	// By default, return false
 	return true
 }
 

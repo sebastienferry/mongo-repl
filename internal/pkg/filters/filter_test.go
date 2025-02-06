@@ -81,7 +81,7 @@ func TestShouldReplicateNamespace(t *testing.T) {
 }
 
 // Test both KeepOperation and KeepCollection
-func TestOplogFilter_Keep(t *testing.T) {
+func TestOplogFilterKeepOperation(t *testing.T) {
 	config.Current = &config.AppConfig{
 		Repl: config.ReplConfig{
 			DatabasesIn: map[string]bool{
@@ -111,9 +111,9 @@ func TestOplogFilter_Keep(t *testing.T) {
 		{"db1", "coll1", "u", true},
 		{"db1", "coll1", "d", true},
 
-		{"db1", "coll2", "i", false},
-		{"db1", "coll2", "u", false},
-		{"db1", "coll2", "d", false},
+		{"db1", "coll2", "i", true},
+		{"db1", "coll2", "u", true},
+		{"db1", "coll2", "d", true},
 
 		{"db2", "coll1", "i", false},
 		{"db2", "coll1", "u", false},

@@ -9,6 +9,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/collections"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
@@ -132,7 +133,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 				mdb.NewMongoItemReader(mdb.Registry.GetSource(), requested.Database, requested.Collection),
 				mdb.NewMongoItemReader(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
 				mdb.NewMongoWriter(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				requested.Database, requested.Collection, false, 10000)
+				requested.Database, requested.Collection, false, config.Current.Repl.Full.BatchSize)
 
 			err := snapshot.SynchronizeCollection(ctx)
 			if err != nil {

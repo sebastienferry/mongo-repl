@@ -63,7 +63,7 @@ func (s *Snapshot) RunSnapshots(ctx context.Context, dbAndCollections map[string
 					or := mdb.NewMongoItemReader(mdb.Registry.GetSource(), db, collection)
 					tr := mdb.NewMongoItemReader(mdb.Registry.GetTarget(), db, collection)
 					tw := mdb.NewMongoWriter(mdb.Registry.GetTarget(), db, collection)
-					delta := NewDeltaReplication(or, tr, tw, db, collection, true, 10000)
+					delta := NewDeltaReplication(or, tr, tw, db, collection, true, config.Current.Repl.Full.BatchSize)
 					delta.SynchronizeCollection(context.Background())
 				} else {
 					replErr = s.RunSnapshot(context.Background(), db, collection)

@@ -6,21 +6,26 @@ import (
 	"errors"
 	"math"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/interfaces"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
+// Holds the information to replicate a collection.
+// Internally, it uses two ItemReader to read from the source and target databases
+// and an ItemWriter to write to the target database.
 type DeltaReplication struct {
-	SourceReader ItemReader
-	TargetReader ItemReader
-	TargetWriter ItemWriter
+	SourceReader interfaces.ItemReader
+	TargetReader interfaces.ItemReader
+	TargetWriter interfaces.ItemWriter
 	Database     string
 	Collection   string
 	Initial      bool
 	BatchSize    int
 
-	// The current batch
+	// State variables
 	currentBatch  int
 	firstId       primitive.ObjectID
 	itemsToInsert []*bson.D
@@ -28,7 +33,8 @@ type DeltaReplication struct {
 	itemsToDelete []primitive.ObjectID
 }
 
-func NewDeltaReplication(sourceReader ItemReader, targetReader ItemReader, targetWriter ItemWriter,
+// Creates a new DeltaReplication object.
+func NewDeltaReplication(sourceReader interfaces.ItemReader, targetReader interfaces.ItemReader, targetWriter interfaces.ItemWriter,
 	database string, collection string, initial bool, batchSize int) *DeltaReplication {
 	return &DeltaReplication{
 		SourceReader: sourceReader,
@@ -41,10 +47,23 @@ func NewDeltaReplication(sourceReader ItemReader, targetReader ItemReader, targe
 	}
 }
 
+// Synchronize the collection.
 func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 
 	r.currentBatch = 1
 	r.firstId = primitive.ObjectID{}
+
+	// Prepare to track the replication progress
+	progress := NewSyncProgress(r.Database, r.Collection)
+	total, err := r.SourceReader.Count(ctx)
+	if err != nil {
+		log.ErrorWithFields("error getting source count: ", log.Fields{
+			"database":   r.Database,
+			"collection": r.Collection,
+			"err":        err})
+		return err
+	}
+	progress.SetTotal(total)
 
 	// Loop until there are no more items to sync
 	for {
@@ -52,7 +71,7 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 		// Read from source
 		source, err := r.SourceReader.ReadItems(ctx, r.BatchSize, r.firstId)
 		if err != nil {
-			log.Error("Error reading source items: ", err)
+			log.Error("error reading source items: ", err)
 			return err
 		}
 
@@ -61,26 +80,28 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 			lastId = GetObjectId(source[len(source)-1])
 		}
 
-		//log.Info(fmt.Sprintf("IDs range: ]%s - %s]", r.firstId.String(), lastId.String()))
-
 		// Read from target all the items between startId and endId
-		target := make([]*bson.D, 0)
+		// but only for non initial snapshot (meaning db is not empty)
+		// otherwise can simply read source and insert all items.
+		var target []*bson.D
 		if !r.Initial {
 			target, err = r.TargetReader.ReadItems(ctx, r.BatchSize, r.firstId, lastId)
 			if err != nil {
-				log.Error("Error reading target items: ", err)
+				log.Error("error reading target items: ", err)
 				return err
 			}
 		}
 
 		if len(source) == 0 && len(target) == 0 {
-			log.InfoWithFields("No more items to sync", log.Fields{
+			log.InfoWithFields("no more items to sync", log.Fields{
+				"progress":   progress.Progress(),
 				"database":   r.Database,
 				"collection": r.Collection})
 			break
 		}
 
-		log.InfoWithFields("Snapshot execution", log.Fields{
+		log.InfoWithFields("snapshot execution", log.Fields{
+			"progress":   progress.Progress(),
 			"batch":      r.currentBatch,
 			"database":   r.Database,
 			"collection": r.Collection,
@@ -88,42 +109,60 @@ func (r *DeltaReplication) SynchronizeCollection(ctx context.Context) error {
 
 		// Compare the two slices : source and target
 		// Compute the list of items to insert, update and delete
-		err = r.computeDelta(ctx, source, target)
+		err = r.computeDelta(source, target)
 		if err != nil {
-			log.Error("Error comparing and syncing items: ", err)
+			log.Error("error comparing and syncing items: ", err)
 			return err
 		}
 
 		// Insert, update and delete the items
 		if len(r.itemsToInsert) > 0 {
-			_, err = r.TargetWriter.InsertMany(ctx, r.itemsToInsert)
+			inserted, err := r.TargetWriter.InsertMany(ctx, r.itemsToInsert)
 			if err != nil {
-				log.Error("Error inserting documents: ", err)
+				log.Error("error inserting documents: ", err)
 				return err
 			}
+
+			// Update the progress and metrics
+			progress.Increment(inserted.InsertedCount)
+			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.InsertOp).Add(float64(inserted.InsertedCount))
+			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.InsertOp).Add(float64(inserted.ErrorCount))
 		}
 
 		if len(r.itemsToUpdate) > 0 {
-			_, err = r.TargetWriter.UpdateMany(ctx, r.itemsToUpdate)
+			updated, err := r.TargetWriter.UpdateMany(ctx, r.itemsToUpdate)
 			if err != nil {
-				log.Error("Error updating documents: ", err)
+				log.Error("error updating documents: ", err)
 				return err
 			}
+
+			// Update the progress and metrics
+			progress.Increment(updated.UpdatedCount)
+			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.UpdateOp).Add(float64(updated.UpdatedCount))
+			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.UpdateOp).Add(float64(updated.ErrorCount))
 		}
 
 		if len(r.itemsToDelete) > 0 {
-			_, err = r.TargetWriter.DeleteMany(ctx, r.itemsToDelete)
+			deleted, err := r.TargetWriter.DeleteMany(ctx, r.itemsToDelete)
 			if err != nil {
-				log.Error("Error deleting documents: ", err)
+				log.Error("error deleting documents: ", err)
 				return err
 			}
+
+			// Update the metrics, but not the progress.
+			// Do not count the items to delete in the progress, only upsert to avoid goind over 100%
+			metrics.SnapshotWriteCounter.WithLabelValues(r.Database, r.Collection, metrics.DeleteOp).Add(float64(deleted.DeletedCount))
+			metrics.SnapshotErrorTotal.WithLabelValues(r.Database, r.Collection, metrics.DeleteOp).Add(float64(deleted.ErrorCount))
 		}
+
+		// Do not count the items to delete in the progress, only upsert to avoid goind over 100%
+		metrics.SnapshotProgressGauge.WithLabelValues(r.Database, r.Collection).Set(progress.Progress())
 		r.currentBatch++
 	}
 	return nil
 }
 
-func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, target []*bson.D) error {
+func (r *DeltaReplication) computeDelta(source []*bson.D, target []*bson.D) error {
 
 	// Compare the two slices : source and target
 	// Nota bene: The slices are sorted by ID
@@ -142,29 +181,29 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 	r.itemsToUpdate = make([]*bson.D, 0, r.BatchSize)
 	r.itemsToDelete = make([]primitive.ObjectID, 0, r.BatchSize)
 
-	// We loop until we reach the end of at least one slice.
+	// we loop until we reach the end of at least one slice.
 	var lowest int = (int)(math.Min(float64(sourceCount), float64(targetCount)))
 	var sourceIndex int
 	var targetIndex int
 	for sourceIndex < lowest || targetIndex < lowest {
 
-		// We did not reach the end of the source slice
+		// we did not reach the end of the source slice
 		if sourceIndex < lowest {
 			sourceId, ok = TryGetObjectId(source[sourceIndex])
 			if !ok {
-				log.Error("Error getting source ID")
-				return errors.New("Error getting source ID")
+				log.Error("error getting source ID")
+				return errors.New("error getting source ID")
 			}
 		} else {
 			sourceId = primitive.ObjectID{}
 		}
 
-		// We did not reach the end of the target slice
+		// we did not reach the end of the target slice
 		if targetIndex < lowest {
 			targetId, ok = TryGetObjectId(target[targetIndex])
 			if !ok {
-				log.Error("Error getting target ID")
-				return errors.New("Error getting target ID")
+				log.Error("error getting target ID")
+				return errors.New("error getting target ID")
 			}
 		} else {
 			targetId = primitive.ObjectID{}
@@ -187,7 +226,7 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is equal to the target ID
 			// ==> Update the target item
-			//log.Info("Update document: ", source[sourceIndex])
+			//log.Info("update document: ", source[sourceIndex])
 			r.itemsToUpdate = append(r.itemsToUpdate, source[sourceIndex])
 			lastSourceId = sourceId
 			sourceIndex++
@@ -196,11 +235,11 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is bigger than the target ID
 			// ==> Remove the target item
-			//log.Info("Remove document: ", target[targetIndex])
+			//log.Info("remove document: ", target[targetIndex])
 			idToDelete, ok := TryGetObjectId(target[targetIndex])
 			if !ok {
-				log.Error("Error getting target ID")
-				return errors.New("Error getting target ID")
+				log.Error("error getting target ID")
+				return errors.New("error getting target ID")
 			}
 
 			r.itemsToDelete = append(r.itemsToDelete, idToDelete)
@@ -210,21 +249,21 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 
 			// The source ID is lower than the target ID
 			// ==> Insert the source item to the target
-			//log.Info("Insert document: ", source[sourceIndex])
+			//log.Info("insert document: ", source[sourceIndex])
 			r.itemsToInsert = append(r.itemsToInsert, source[sourceIndex])
 			lastSourceId = sourceId
 			sourceIndex++
 		}
 	}
 
-	// We reach the end of either the source or the target slice
-	// We need to handle the remaining items
+	// we reach the end of either the source or the target slice
+	// we need to handle the remaining items
 	if sourceCount > targetCount {
 
 		// The source slice is bigger than the target slice
 		// ==> Add the missing items
 		for index := targetCount; index < sourceCount; index++ {
-			// log.Debug("Insert document (ramasse miettes): ", source[index])
+			// log.Debug("insert document (ramasse miettes): ", source[index])
 			r.itemsToInsert = append(r.itemsToInsert, source[index])
 		}
 
@@ -235,11 +274,11 @@ func (r *DeltaReplication) computeDelta(ctx context.Context, source []*bson.D, t
 		// The target slice is bigger than the source slice
 		// ==> Remove the extra items
 		for index := sourceCount; index < targetCount; index++ {
-			log.Info("Delete document (ramasse miettes): ", target[index])
+			log.Info("delete document (ramasse miettes): ", target[index])
 			idToDelete, ok := TryGetObjectId(target[index])
 			if !ok {
-				log.Error("Error getting target ID")
-				return errors.New("Error getting target ID")
+				log.Error("error getting target ID")
+				return errors.New("error getting target ID")
 			}
 			r.itemsToDelete = append(r.itemsToDelete, idToDelete)
 		}

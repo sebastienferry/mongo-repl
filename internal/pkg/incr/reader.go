@@ -9,7 +9,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/checkpoint"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/collections"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/filter"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
@@ -31,7 +31,7 @@ type Reader interface {
 
 type OplogReader struct {
 	ckpt      checkpoint.CheckpointManager
-	filter    *filter.Filter
+	filter    *filters.Filter
 	latest    primitive.Timestamp
 	queue     chan *oplog.ChangeLog
 	options   *options.FindOptions
@@ -48,7 +48,7 @@ func NewOplogReader(ckpt checkpoint.CheckpointManager,
 	return &OplogReader{
 		latest:    latest,
 		ckpt:      ckpt,
-		filter:    filter.NewFilter(),
+		filter:    filters.NewFilter(),
 		options:   options.Find(),
 		queue:     queue,
 		cmdc:      cmdc,
@@ -81,15 +81,15 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 				switch cmd.Id {
 				case commands.CmdIdPauseIncr:
 					r.state = StatePaused
-					log.Info("Incremental replication paused")
+					log.Info("incremental replication paused")
 				case commands.CmdIdResumeIncr:
 					r.state = StateRunning
-					log.Info("Incremental replication resumed")
+					log.Info("incremental replication resumed")
 				case commands.CmdIdSnapshot:
 
 					// Extract the collection to snapshot
 					if len(cmd.Arguments) <= 1 {
-						log.Warn("Invalid argument for snapshot")
+						log.Warn("invalid argument for snapshot")
 					}
 
 					database := cmd.Arguments[0]
@@ -99,7 +99,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 						Database:   database,
 						Collection: collection,
 					})
-					log.Info("Snapshot request received for ", collection)
+					log.Info("snapshot request received for ", collection)
 
 				case StateRunning:
 				default:
@@ -110,14 +110,14 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 		// Check if we should stop processing
 		select {
 		case <-r.done:
-			log.Info("Stopping oplog reader")
+			log.Info("stopping oplog reader")
 			return
 		default:
 		}
 
 		if r.state == StatePaused {
 			time.Sleep(CursorWaitTime)
-			log.Debug("Incremental replication is paused, sleeping for ", CursorWaitTime.Seconds(), " secs")
+			log.Debug("incremental replication is paused, sleeping for ", CursorWaitTime.Seconds(), " secs")
 			continue
 		}
 
@@ -129,14 +129,14 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 			// Should we store some state (the snapshot queue) in the database ?
 			requested := r.snapshots.Dequeue()
 			snapshot := snapshot.NewDeltaReplication(
-				snapshot.NewMongoItemReader(mdb.Registry.GetSource(), requested.Database, requested.Collection),
-				snapshot.NewMongoItemReader(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
-				snapshot.NewMongoWriter(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
+				mdb.NewMongoItemReader(mdb.Registry.GetSource(), requested.Database, requested.Collection),
+				mdb.NewMongoItemReader(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
+				mdb.NewMongoWriter(mdb.Registry.GetTarget(), requested.Database, requested.Collection),
 				requested.Database, requested.Collection, false, 10000)
 
 			err := snapshot.SynchronizeCollection(ctx)
 			if err != nil {
-				log.Error("Error during snapshot: ", err)
+				log.Error("error during snapshot: ", err)
 			}
 		}
 
@@ -144,7 +144,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 		filterOnTs := bson.D{{"ts", bson.D{{"$gt", r.latest}}}}
 		cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, r.options)
 		if err != nil {
-			log.Error("Error getting oplog cursor: ", err)
+			log.Error("error getting oplog cursor: ", err)
 			time.Sleep(CursorWaitTime)
 			continue
 		}
@@ -152,7 +152,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 		for cur.Next(context.Background()) {
 
 			if err := cur.Err(); err != nil {
-				log.Error("Error getting next oplog entry: ", err)
+				log.Error("error getting next oplog entry: ", err)
 				// Release the cursor
 				cur.Close(context.Background())
 				// Wait a bit
@@ -171,7 +171,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 
 			err := bson.Unmarshal(bytes, &l)
 			if err != nil {
-				log.Error("Error unmarshalling oplog entry: ", err)
+				log.Error("error unmarshalling oplog entry: ", err)
 				continue
 			}
 
@@ -189,8 +189,8 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 				db, coll = oplog.GetDbAndCollection(l.Namespace)
 
 				// Filter out unwanted commands
-				command, found := ExtraCommandName(l.Object)
-				if found && KeepOperation(command) {
+				command, found := mdb.ExtraCommandName(l.Object)
+				if found && filters.KeepOperation(command) {
 
 					cmd := l.Object
 					computedCmd := primitive.D{}
@@ -203,7 +203,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 						// ApplyOps is a special command that contains a list of sub-commands
 						// We should filter out the unwanted sub-commands on the operation and namespace
 						case ApplyOps:
-							computedCmd, computedCmdSize = FilterApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
+							computedCmd, computedCmdSize = SanitizeApplyOps(ele, KeepSubOp, computedCmd, computedCmdSize)
 						case "startIndexBuild":
 						case "indexBuildUUID":
 						case "index":
@@ -213,9 +213,9 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 						case "dropIndexes":
 							computedCmd = cmd
 						default:
-							log.Info("Unknown command: ", ele.Key)
+							log.Info("unknown command: ", ele.Key)
 							jsonCmd, _ := json.Marshal(l)
-							log.Info("Command: " + string(jsonCmd))
+							log.Info("command: " + string(jsonCmd))
 						}
 					}
 
@@ -227,25 +227,20 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 							Db:         db,
 							Collection: coll,
 						}
+
+						// Only increment the counter if we have sanitized sub-commands
+						// TODO: Should we increment by the number of sub-commands?
+						metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
 					}
 
-					// Update the checkpoint
+					// Always update the checkpoint to advance in the oplog
 					r.latest = l.Timestamp
-
-					// TODO: Should we increment by the number of sub-commands?
-					metrics.IncrSyncOplogReadCounter.WithLabelValues(db, coll, l.Operation).Inc()
-
-					// r.queue <- &oplog.ChangeLog{
-					// 	ParsedLog:  l,
-					// 	Db:         db,
-					// 	Collection: coll,
-					// }
 
 				} else {
 					// We are not interested in this command
 					// Yet we still need to update the checkpoint
 					// TODO: Check if we need to update the checkpoint
-					log.Debug("Unwanted command: ", command)
+					log.Debug("unwanted command: ", command)
 					continue
 				}
 

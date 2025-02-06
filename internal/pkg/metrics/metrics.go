@@ -2,6 +2,15 @@ package metrics
 
 import "github.com/prometheus/client_golang/prometheus"
 
+const (
+	NoOp      = "n"  // NoOp operation
+	DbOp      = "db" // Database operation
+	UpdateOp  = "u"  // Update operation
+	DeleteOp  = "d"  // Delete operation
+	InsertOp  = "i"  // Insert operation
+	CommandOp = "c"  // Command operation
+)
+
 var (
 	// Define a custom registry
 	Registry *prometheus.Registry

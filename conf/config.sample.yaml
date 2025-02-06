@@ -6,11 +6,15 @@ logging:
 
 # Define the replication
 repl:
-  
+
   # Define the replication id
   # This is used to store the replication state
   # The default value is "default"
   id: "rs0_to_rs1_sample"
+
+  # Enabled features
+  features:
+    # - delta # Enable the delta replication instead of the legacy one
 
   # Mongo source et target configuration
   # Eventually, you can override those using environment variables
@@ -30,7 +34,7 @@ repl:
 
   # Full replication configuration
   full:
-  
+
     # Batch size for replication
     batch: 1000
 

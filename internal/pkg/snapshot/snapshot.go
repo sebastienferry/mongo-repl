@@ -30,7 +30,7 @@ func (s *Snapshot) RunSnapshots(ctx context.Context, dbAndCollections map[string
 	// Get the oplog windows
 	oplogWindow, err := checkpoint.GetReplicasetOplogWindow()
 	if err != nil {
-		log.Fatal("Error computing the oplog window: ", err)
+		log.Fatal("error computing oplog window: ", err)
 	}
 
 	// Replicate the collections
@@ -42,14 +42,14 @@ func (s *Snapshot) RunSnapshots(ctx context.Context, dbAndCollections map[string
 
 			// Filter the collections to replicate
 			// FilterIn has priority over FilterOut
-			if len(config.Current.Repl.Filters["in"]) > 0 {
+			if len(config.Current.Repl.FiltersIn) > 0 {
 				if _, ok := config.Current.Repl.FiltersIn[collection]; !ok {
-					log.Info("Skipping collection: ", collection)
+					log.Info("skipping collection (filtered by configuration): ", collection)
 					continue
 				}
 			} else if len(config.Current.Repl.FiltersOut) > 0 {
 				if _, ok := config.Current.Repl.FiltersOut[collection]; ok {
-					log.Info("Skipping collection: ", collection)
+					log.Info("skipping collection (filtered by configuration): ", collection)
 					continue
 				}
 			}
@@ -58,22 +58,31 @@ func (s *Snapshot) RunSnapshots(ctx context.Context, dbAndCollections map[string
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				replErr = s.RunSnapshot(context.Background(), db, collection)
+				if config.IsFeatureEnabled(config.DeltaReplication) {
+					// Use the new delta replication
+					or := mdb.NewMongoItemReader(mdb.Registry.GetSource(), db, collection)
+					tr := mdb.NewMongoItemReader(mdb.Registry.GetTarget(), db, collection)
+					tw := mdb.NewMongoWriter(mdb.Registry.GetTarget(), db, collection)
+					delta := NewDeltaReplication(or, tr, tw, db, collection, true, 10000)
+					delta.SynchronizeCollection(context.Background())
+				} else {
+					replErr = s.RunSnapshot(context.Background(), db, collection)
+				}
 			}()
 		}
 
 		// Wait for all the collections to finish
 		wg.Wait()
-		log.InfoWithFields("Finished full replication for database", log.Fields{
+		log.InfoWithFields("finished full replication", log.Fields{
 			"database": db,
 		})
 
 		if replErr != nil {
-			log.Fatal("Error replicating the collections: ", replErr)
+			log.Fatal("error replicating the collections: ", replErr)
 		}
 
-		log.Info("OPLog boundaries: ", oplogWindow)
-		log.InfoWithFields("OPLog dates:", log.Fields{
+		log.Info("oplog boundaries: ", oplogWindow)
+		log.InfoWithFields("oplog dates:", log.Fields{
 			"oldest": time.Unix(int64(oplogWindow.Oldest.T), 0),
 			"newest": time.Unix(int64(oplogWindow.Newest.T), 0),
 		})
@@ -97,14 +106,14 @@ func (s *Snapshot) RunSnapshot(ctx context.Context, database string, collection 
 	// Start the replication
 	err := reader.Replicate(ctx)
 	if err != nil {
-		log.Error("Error replicating the collection: ", err)
+		log.Error("error replicating the collection: ", err)
 		return err
 	}
 
 	// Replicate the indexes
 	err = s.ReplicateIndexes(ctx, database, collection)
 	if err != nil {
-		log.Error("Error replicating the indexes: ", err)
+		log.Error("error replicating the indexes: ", err)
 		return err
 	}
 
@@ -117,7 +126,7 @@ func (s *Snapshot) ReplicateIndexes(ctx context.Context, database string, collec
 	// Get the indexes from the source
 	indexes, err := mdb.GetIndexesByDb(ctx, database, collection)
 	if err != nil {
-		log.Error("Error getting the indexes: ", err)
+		log.Error("error getting the indexes: ", err)
 		return err
 	}
 
@@ -154,10 +163,10 @@ func (s *Snapshot) ReplicateIndexes(ctx context.Context, database string, collec
 		coll := mdb.Registry.GetTarget().Client.Database(database).Collection(collection)
 		newName, err := coll.Indexes().CreateOne(ctx, newIndex)
 		if err != nil {
-			log.Error("Error creating the index: ", err)
+			log.Error("error creating the index: ", err)
 			return err
 		} else {
-			log.InfoWithFields("Created index", log.Fields{"name": newName})
+			log.InfoWithFields("created index", log.Fields{"name": newName})
 		}
 	}
 	return nil

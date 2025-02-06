@@ -1,6 +1,7 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"regexp"
 
@@ -28,9 +29,13 @@ type ReplConfig struct {
 	// The replication id
 	Id string `yaml:"id"`
 	// The address of the MongoDB server
-	Source string `json:"Source" yaml:"source"`
+	Source string `json:"source" yaml:"source"`
 	// The address of the MongoDB server
-	Target string `json:"Target" yaml:"target"`
+	Target string `json:"target" yaml:"target"`
+
+	// Features flags
+	Features        []string        `yaml:"features"`
+	FeaturesEnabled map[string]bool `yaml:"-"`
 
 	// The list of databases to replicate
 	Databases   []string        `yaml:"databases"`
@@ -66,14 +71,21 @@ var Current *AppConfig = NewConfig()
 // LoadConfig loads the configuration from a file
 func (c *AppConfig) LoadConfig() error {
 
+	var configFileArg string
+	flag.StringVar(&configFileArg, "config", "config.yaml", "path to the configuration file")
+	flag.Parse()
+
 	// Fetch the environment variable
 	configFilePath := os.Getenv("CONFIG_FILE_PATH")
-	log.Debug("CONFIG_FILE_PATH: ", configFilePath)
+	log.Info("configuration file path: ", configFilePath)
+	if configFilePath == "" {
+		configFilePath = configFileArg
+	}
 
 	// Open the configuration file
 	f, err := os.Open(configFilePath)
 	if err != nil {
-		log.Fatal("Error opening configuration file: ", err)
+		log.Fatal("error opening configuration file: ", err)
 	}
 	defer f.Close()
 
@@ -81,12 +93,12 @@ func (c *AppConfig) LoadConfig() error {
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(c)
 	if err != nil {
-		log.Fatal("Error decoding configuration file: ", err)
+		log.Fatal("error decoding configuration file: ", err)
 	}
 
 	// Override the log level if set in the environment
 	if os.Getenv("LOG_LEVEL") != "" {
-		c.Logging.Level = os.Getenv("LOG_LEVEL")
+		c.Logging.Level = os.Getenv("lOG_LEVEL")
 	}
 
 	// Ensure the ID is set
@@ -100,6 +112,12 @@ func (c *AppConfig) LoadConfig() error {
 	}
 	if os.Getenv("TARGET") != "" {
 		c.Repl.Target = os.Getenv("TARGET")
+	}
+
+	// Features
+	c.Repl.FeaturesEnabled = make(map[string]bool)
+	for _, feature := range c.Repl.Features {
+		c.Repl.FeaturesEnabled[feature] = true
 	}
 
 	// Databases to replicate
@@ -123,10 +141,10 @@ func (c *AppConfig) LoadConfig() error {
 }
 
 func (c *AppConfig) LogConfig() {
-	log.Info("MongoDB configuration:")
-	log.Info("- Source: ", ObfuscateCrendentials(c.Repl.Source))
-	log.Info("- Target: ", ObfuscateCrendentials(c.Repl.Target))
-	log.Info("Databases to replicate:")
+	log.Info("mongo configuration:")
+	log.Info("- source: ", ObfuscateCrendentials(c.Repl.Source))
+	log.Info("- target: ", ObfuscateCrendentials(c.Repl.Target))
+	log.Info("databases to replicate:")
 	for _, db := range c.Repl.Databases {
 		log.Info("- ", db)
 	}

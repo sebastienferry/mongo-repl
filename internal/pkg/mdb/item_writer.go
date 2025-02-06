@@ -1,42 +1,24 @@
-package snapshot
+package mdb
 
 import (
 	"context"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/interfaces"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type BulkResult struct {
-	InsertedCount           int
-	UpdatedCount            int
-	DeletedCount            int
-	SkippedOnDuplicateCount int
-	ErrorCount              int
-}
-
-type ItemWriter interface {
-	Insert(ctx context.Context, item *primitive.D) error
-	InsertMany(ctx context.Context, items []*bson.D) (BulkResult, error)
-	Update(ctx context.Context, source *primitive.D, target *primitive.D) error
-	UpdateMany(ctx context.Context, items []*bson.D) (BulkResult, error)
-	Delete(ctx context.Context, id primitive.ObjectID) error
-	DeleteMany(ctx context.Context, ids []primitive.ObjectID) (BulkResult, error)
-	WriteMany(ctx context.Context, items []*bson.D) (BulkResult, error)
-}
-
 type MongoItemWriter struct {
-	Target     *mdb.MDB
+	Target     *MDB
 	Database   string
 	Collection string
 }
 
-func NewMongoWriter(target *mdb.MDB, database string, collection string) *MongoItemWriter {
+func NewMongoWriter(target *MDB, database string, collection string) *MongoItemWriter {
 	return &MongoItemWriter{
 		Target:     target,
 		Database:   database,
@@ -49,34 +31,9 @@ func (s *MongoItemWriter) Insert(ctx context.Context, item *primitive.D) error {
 	return err
 }
 
-func (w *MongoItemWriter) InsertMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
+func (w *MongoItemWriter) InsertMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
-	var result BulkResult = BulkResult{}
-
-	// if len(items) == 0 {
-	// 	log.Debug("No documents to sync")
-	// 	return result, nil
-	// }
-
-	// var models []mongo.WriteModel
-	// for _, item := range items {
-	// 	models = append(models, mongo.NewUpdateOneModel()
-	//         SetF
-	//     .SetDocument(item))
-	// }
-
-	// if config.Current.Logging.Level == log.DebugLevel {
-	// 	log.DebugWithFields("Inserting documents",
-	// 		log.Fields{
-	// 			"database":   w.Database,
-	// 			"collection": w.Collection,
-	// 			"count":      len(models),
-	// 		})
-	// }
-
-	// // Bulk write the documents
-	// opts := options.BulkWrite().SetOrdered(false)
-	// _, err := w.Target.Client.Database(w.Database).Collection(w.Collection).BulkWrite(nil, models, opts)
+	var result interfaces.BulkResult = interfaces.BulkResult{}
 
 	_, err := w.upsertManyInternal(ctx, items)
 
@@ -88,7 +45,7 @@ func (w *MongoItemWriter) InsertMany(ctx context.Context, items []*bson.D) (Bulk
 
 	// Handle non-bulk write errors
 	if _, ok := err.(mongo.BulkWriteException); !ok {
-		log.Error("Bulk write failed", err)
+		log.Error("bulk write failed", err)
 		result.ErrorCount = len(items)
 		return result, err
 	}
@@ -101,9 +58,9 @@ func (s *MongoItemWriter) Update(ctx context.Context, source *primitive.D, targe
 	return err
 }
 
-func (w *MongoItemWriter) UpdateMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
+func (w *MongoItemWriter) UpdateMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
-	var result BulkResult = BulkResult{}
+	var result interfaces.BulkResult = interfaces.BulkResult{}
 
 	_, err := w.upsertManyInternal(ctx, items)
 
@@ -115,7 +72,7 @@ func (w *MongoItemWriter) UpdateMany(ctx context.Context, items []*bson.D) (Bulk
 
 	// Handle non-bulk write errors
 	if _, ok := err.(mongo.BulkWriteException); !ok {
-		log.Error("Bulk write failed", err)
+		log.Error("bulk write failed", err)
 		result.ErrorCount = len(items)
 		return result, err
 	}
@@ -126,32 +83,23 @@ func (w *MongoItemWriter) UpdateMany(ctx context.Context, items []*bson.D) (Bulk
 
 func (w *MongoItemWriter) upsertManyInternal(ctx context.Context, items []*bson.D) (*mongo.BulkWriteResult, error) {
 	if len(items) == 0 {
-		log.Debug("No documents to sync")
+		log.Debug("no documents to sync")
 		return nil, nil
 	}
 
 	var models []mongo.WriteModel
 	for _, item := range items {
 
-		var id primitive.ObjectID = GetObjectId(item)
+		var id primitive.ObjectID = GetObjectId(*item)
 		var filter bson.D = bson.D{{Key: "_id", Value: id}}
 
 		models = append(models, mongo.NewUpdateOneModel().
 			SetFilter(filter).SetUpsert(true).SetUpdate(bson.D{{"$set", item}}))
 	}
 
-	if config.Current.Logging.Level == log.DebugLevel {
-		log.InfoWithFields("Synching documents",
-			log.Fields{
-				"database":   w.Database,
-				"collection": w.Collection,
-				"count":      len(models),
-			})
-	}
-
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	result, err := w.Target.Client.Database(w.Database).Collection(w.Collection).BulkWrite(nil, models, opts)
+	result, err := w.Target.Client.Database(w.Database).Collection(w.Collection).BulkWrite(ctx, models, opts)
 	return result, err
 }
 
@@ -161,12 +109,12 @@ func (s *MongoItemWriter) Delete(ctx context.Context, id primitive.ObjectID) err
 	return err
 }
 
-func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.ObjectID) (BulkResult, error) {
+func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.ObjectID) (interfaces.BulkResult, error) {
 
-	var result BulkResult = BulkResult{}
+	var result interfaces.BulkResult = interfaces.BulkResult{}
 
 	if len(ids) == 0 {
-		log.Debug("No documents to sync")
+		log.Debug("no documents to sync")
 		return result, nil
 	}
 
@@ -177,7 +125,7 @@ func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.Object
 	}
 
 	if config.Current.Logging.Level == log.DebugLevel {
-		log.DebugWithFields("Deleting documents",
+		log.DebugWithFields("deleting documents",
 			log.Fields{
 				"database":   w.Database,
 				"collection": w.Collection,
@@ -197,7 +145,7 @@ func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.Object
 
 	// Handle non-bulk write errors
 	if _, ok := err.(mongo.BulkWriteException); !ok {
-		log.Error("Bulk write failed", err)
+		log.Error("bulk write failed", err)
 		result.ErrorCount = len(models)
 		return result, err
 	}
@@ -206,12 +154,12 @@ func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.Object
 }
 
 // Sync the documents to the target
-func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkResult, error) {
+func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
-	var result BulkResult = BulkResult{}
+	var result interfaces.BulkResult = interfaces.BulkResult{}
 
 	if len(items) == 0 {
-		log.Debug("No documents to sync")
+		log.Debug("no documents to sync")
 		return result, nil
 	}
 
@@ -221,7 +169,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 	}
 
 	if config.Current.Logging.Level == log.DebugLevel {
-		log.DebugWithFields("Synching documents",
+		log.DebugWithFields("synching documents",
 			log.Fields{
 				"database":   r.Database,
 				"collection": r.Collection,
@@ -231,7 +179,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
+	_, err := Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
 
 	// All documents were successfully written
 	if err == nil {
@@ -241,7 +189,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 
 	// Handle non-bulk write errors
 	if _, ok := err.(mongo.BulkWriteException); !ok {
-		log.Error("Bulk write failed", err)
+		log.Error("bulk write failed", err)
 		result.ErrorCount = len(models)
 		return result, err
 	}
@@ -252,11 +200,11 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 	var updateModels []mongo.WriteModel
 	for _, wError := range (err.(mongo.BulkWriteException)).WriteErrors {
 
-		if mdb.IsDuplicateKeyError(wError) {
+		if IsDuplicateKeyError(wError) {
 
 			if config.Current.Repl.Full.UpdateOnDuplicate {
 
-				log.WarnWithFields("Insert of documents failed, attempting to update them",
+				log.WarnWithFields("insert of documents failed, attempting to update them",
 					log.Fields{
 						"length":     len(models),
 						"collection": r.Collection,
@@ -276,7 +224,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 				}
 
 				if !updateFilterBool {
-					log.Error("Duplicate key error, can't get _id from document", wError)
+					log.Error("duplicate key error, can't get _id from document", wError)
 					continue
 				}
 
@@ -287,28 +235,28 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (BulkR
 				result.SkippedOnDuplicateCount++
 
 				if config.Current.Logging.Level == log.DebugLevel {
-					log.ErrorWithFields("Skip duplicate", log.Fields{
+					log.ErrorWithFields("skip duplicate", log.Fields{
 						"index":      wError.Index,
 						"databse":    r.Database,
 						"collection": r.Collection,
-						"id":         GetObjectId(items[wError.Index])})
+						"id":         GetObjectId(*items[wError.Index])})
 				}
 			}
 		} else {
 			result.ErrorCount++
-			log.Error("Bulk write error with unhandled case", err)
+			log.Error("bulk write error with unhandled case", err)
 		}
 	}
 
 	if len(updateModels) != 0 {
 		opts := options.BulkWrite().SetOrdered(false)
-		_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
+		_, err := Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
 		if err != nil {
 			result.ErrorCount = len(updateModels)
 			return result, err
 		}
 		result.UpdatedCount = len(updateModels)
-		log.DebugWithFields("Update on duplicate successed",
+		log.DebugWithFields("update on duplicate successed",
 			log.Fields{
 				"length":     len(updateModels),
 				"collection": r.Collection,

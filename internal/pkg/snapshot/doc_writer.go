@@ -2,6 +2,7 @@ package snapshot
 
 import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
+	"github.com/sebastienferry/mongo-repl/internal/pkg/interfaces"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"go.mongodb.org/mongo-driver/bson"
@@ -29,12 +30,12 @@ func NewDocumentWriter(database string, collection string, target *mdb.MDB) *Doc
 }
 
 // Sync the documents to the target
-func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
+func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (interfaces.BulkResult, error) {
 
-	var result BulkResult = BulkResult{}
+	var result interfaces.BulkResult = interfaces.BulkResult{}
 
 	if len(docs) == 0 {
-		log.Debug("No documents to sync")
+		log.Debug("no documents to sync")
 		return result, nil
 	}
 
@@ -47,7 +48,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 		var docBeg, docEnd bson.M
 		bson.Unmarshal(*docs[0], &docBeg)
 		bson.Unmarshal(*docs[len(docs)-1], &docEnd)
-		log.DebugWithFields("Synching documents",
+		log.DebugWithFields("synching documents",
 			log.Fields{
 				"database":   r.Database,
 				"collection": r.Collection,
@@ -67,7 +68,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 
 	// Handle non-bulk write errors
 	if _, ok := err.(mongo.BulkWriteException); !ok {
-		log.Error("Bulk write failed", err)
+		log.Error("bulk write failed", err)
 		result.ErrorCount = len(models)
 		return result, err
 	}
@@ -82,7 +83,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 
 			if config.Current.Repl.Full.UpdateOnDuplicate {
 
-				log.WarnWithFields("Insert of documents failed, attempting to update them",
+				log.WarnWithFields("insert of documents failed, attempting to update them",
 					log.Fields{
 						"length":     len(models),
 						"collection": r.Collection,
@@ -104,7 +105,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 				}
 
 				if !updateFilterBool {
-					log.Error("Duplicate key error, can't get _id from document", wError)
+					log.Error("duplicate key error, can't get _id from document", wError)
 					continue
 				}
 
@@ -115,7 +116,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 				result.SkippedOnDuplicateCount++
 
 				if config.Current.Logging.Level == log.DebugLevel {
-					log.ErrorWithFields("Skip duplicate", log.Fields{
+					log.ErrorWithFields("skip duplicate", log.Fields{
 						"index":      wError.Index,
 						"databse":    r.Database,
 						"collection": r.Collection,
@@ -124,7 +125,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 			}
 		} else {
 			result.ErrorCount++
-			log.Error("Bulk write error with unhandled case", err)
+			log.Error("bulk write error with unhandled case", err)
 		}
 	}
 
@@ -136,7 +137,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (BulkResult, error) {
 			return result, err
 		}
 		result.UpdatedCount = len(updateModels)
-		log.DebugWithFields("Update on duplicate successed",
+		log.DebugWithFields("update on duplicate successed",
 			log.Fields{
 				"length":     len(updateModels),
 				"collection": r.Collection,

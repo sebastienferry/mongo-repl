@@ -21,9 +21,9 @@ func main() {
 	// Load the configuration
 	err := config.Current.LoadConfig()
 	if err != nil {
-		log.Fatal("Error loading configuration: ", err)
+		log.Fatal("error loading configuration: ", err)
 	}
-	log.Debug("Configuration loaded")
+	log.Debug("configuration loaded")
 	config.Current.LogConfig()
 
 	// Logger initiatilization
@@ -33,7 +33,7 @@ func main() {
 		FullTimestamp: false,
 		DisableColors: false,
 	})
-	log.Debug("Starting mongo-repl")
+	log.Debug("starting mongo-repl")
 	log.Debug(fmt.Sprintf("log level: %d (%s)", level, config.Current.Logging.Level))
 
 	// Setup mongodb connectivity
@@ -55,5 +55,5 @@ func main() {
 
 	// Shutdown
 	// TODO: Pass some context to API and replication to gracefully shutdown
-	log.Info("Shutting down")
+	log.Info("shutting down")
 }

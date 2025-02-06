@@ -1,9 +1,10 @@
-package incr
+package mdb
 
 import (
 	"fmt"
 	"strings"
 
+	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,43 +16,26 @@ type CommandOperation struct {
 	needFilter      bool // should be ignored in shake
 }
 
-var opsMap = map[string]bool{
-	"create":           false,
-	"createIndexes":    false,
-	"collMod":          false,
-	"dropDatabase":     false,
-	"drop":             false,
-	"deleteIndex":      false,
-	"deleteIndexes":    false,
-	"dropIndex":        true,
-	"dropIndexes":      true,
-	"renameCollection": false,
-	"convertToCapped":  false,
-	"emptycapped":      false,
-	"applyOps":         true,
-	"startIndexBuild":  false,
-	"commitIndexBuild": true,
-	"abortIndexBuild":  false,
-}
-
-var AllowedOperation = map[string]bool{
-	"applyOps":         true,
-	"startIndexBuild":  true,
-	"commitIndexBuild": true,
-	"abortIndexBuild":  true,
-	"dropIndex":        false,
-	"dropIndexes":      true,
-}
-
-func GetObjectId(log bson.D) (primitive.ObjectID, error) {
-	for _, bsonE := range log {
-		if bsonE.Key == "_id" {
-			if oid, ok := bsonE.Value.(primitive.ObjectID); ok {
-				return oid, nil
+func TryGetObjectId(document primitive.D) (primitive.ObjectID, bool) {
+	for _, elem := range document {
+		if elem.Key == "_id" {
+			if oid, ok := elem.Value.(primitive.ObjectID); ok {
+				return oid, true
 			}
 		}
 	}
-	return primitive.ObjectID{}, fmt.Errorf("No ObjectID found")
+	return primitive.ObjectID{}, false
+}
+
+func GetObjectId(document primitive.D) primitive.ObjectID {
+	for _, elem := range document {
+		if elem.Key == "_id" {
+			if oid, ok := elem.Value.(primitive.ObjectID); ok {
+				return oid
+			}
+		}
+	}
+	return primitive.ObjectID{}
 }
 
 func FindFiledPrefix(input bson.D, prefix string) bool {
@@ -225,19 +209,12 @@ func combinePrefixField(prefixField string, obj interface{}) interface{} {
 func ExtraCommandName(o bson.D) (string, bool) {
 	// command name must be at the first position
 	if len(o) > 0 {
-		if _, exist := opsMap[o[0].Key]; exist {
+		if _, exist := filters.AllowedOperation[o[0].Key]; exist {
 			return o[0].Key, true
 		}
 	}
 
 	return "", false
-}
-
-func KeepOperation(command string) bool {
-	if keep, ok := AllowedOperation[strings.TrimSpace(command)]; ok {
-		return keep
-	}
-	return false
 }
 
 func ApplyOpsFilter(key string) bool {
@@ -251,4 +228,16 @@ func ApplyOpsFilter(key string) bool {
 	}
 
 	return false
+}
+
+func ComputeIdsWindow(boundaries ...primitive.ObjectID) (primitive.ObjectID, primitive.ObjectID) {
+	first := primitive.ObjectID{}
+	last := primitive.ObjectID{}
+	if len(boundaries) > 0 {
+		first = boundaries[0]
+	}
+	if len(boundaries) > 1 {
+		last = boundaries[1]
+	}
+	return first, last
 }

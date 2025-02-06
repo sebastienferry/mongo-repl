@@ -11,5 +11,5 @@ POST http://localhost:3000/command/snapshot
 Content-Type: application/json
 
 [
-    { "database": "DeliveryCache", "collection": "wpcCategories" }
+    { "database": "DeliveryCache", "collection": "sites" }
 ]

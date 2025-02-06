@@ -1,44 +1,33 @@
-package snapshot
+package mdb
 
 import (
 	"context"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
-	"github.com/sebastienferry/mongo-repl/internal/pkg/mdb"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/metrics"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func getBoundariesIds(boundaries ...primitive.ObjectID) (primitive.ObjectID, primitive.ObjectID) {
-	first := primitive.ObjectID{}
-	last := primitive.ObjectID{}
-	if len(boundaries) > 0 {
-		first = boundaries[0]
-	}
-	if len(boundaries) > 1 {
-		last = boundaries[1]
-	}
-	return first, last
-}
-
-type ItemReader interface {
-	ReadItems(ctx context.Context, batchSize int, boundaries ...primitive.ObjectID) ([]*bson.D, error)
-}
-
+// Defines a structure to implement the ItemReader interface for MongoDB.
 type MongoItemReader struct {
-	Database   string
-	Collection string
-	Source     *mdb.MDB
+	Database   string // Database to read from
+	Collection string // Collection to read from
+	Source     *MDB   // Source MongoDB client
 }
 
-func NewMongoItemReader(source *mdb.MDB, database string, collection string) *MongoItemReader {
+func NewMongoItemReader(source *MDB, database string, collection string) *MongoItemReader {
 	return &MongoItemReader{
 		Source:     source,
 		Database:   database,
 		Collection: collection,
 	}
+}
+
+// Counts the number of items in the database
+func (r *MongoItemReader) Count(ctx context.Context) (int64, error) {
+	return GetDocumentCountByCollection(r.Source, r.Database, r.Collection)
 }
 
 // Reads a batch of items from the database starting with the next ID after the `first`
@@ -50,7 +39,7 @@ func (r *MongoItemReader) ReadItems(ctx context.Context, batchSize int,
 		return nil, nil
 	}
 
-	first, last := getBoundariesIds(boundaries...)
+	first, last := ComputeIdsWindow(boundaries...)
 
 	// Initialize a result
 	items := make([]*bson.D, 0, batchSize)
@@ -90,14 +79,14 @@ func (r *MongoItemReader) ReadItems(ctx context.Context, batchSize int,
 	for cur.Next(ctx) {
 
 		if err := cur.Err(); err != nil {
-			log.Error("Error reading document: ", err)
+			log.Error("error reading document: ", err)
 			cur.Close(ctx)
 			return items, err
 		}
 
 		raw := cur.Current
 		if raw == nil {
-			log.Error("Error reading document: ", err)
+			log.Error("error reading document: ", err)
 			cur.Close(ctx)
 		}
 
@@ -108,7 +97,7 @@ func (r *MongoItemReader) ReadItems(ctx context.Context, batchSize int,
 		metrics.SnapshotReadCounter.WithLabelValues(r.Database, r.Collection).Inc()
 
 		if err != nil || item == nil {
-			log.Error("Error reading document: ", err)
+			log.Error("error reading document: ", err)
 			cur.Close(ctx)
 			return items, err
 		}

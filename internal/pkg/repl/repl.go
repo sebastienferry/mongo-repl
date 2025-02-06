@@ -22,9 +22,9 @@ const (
 
 var (
 	ReplicationStates = map[int]string{
-		UnknownReplState:     "Unknown",
-		InitialReplState:     "Initial",
-		IncrementalReplState: "Incremental",
+		UnknownReplState:     "unknown",
+		InitialReplState:     "initial",
+		IncrementalReplState: "incremental",
 	}
 )
 
@@ -34,7 +34,7 @@ func StartReplication(ctx context.Context, commands chan commands.Command) {
 
 func RunReplication(ctx context.Context, commands chan commands.Command) {
 
-	log.Info("Starting replication")
+	log.Info("starting replication")
 	checkpointManager := checkpoint.NewMongoCheckpointService(
 		config.Current.Repl.Id,
 		config.Current.Repl.Incr.State.Database,
@@ -43,7 +43,7 @@ func RunReplication(ctx context.Context, commands chan commands.Command) {
 	// Establish the list of dbAndCollections to replicate
 	dbAndCollections, err := mdb.GetCollections(ctx, config.Current.Repl.Databases)
 	if err != nil {
-		log.Fatal("Error getting the list of collections to replicate: ", err)
+		log.Fatal("error getting the list of collections to replicate: ", err)
 	}
 
 	// Start the collections stats monitoring
@@ -85,21 +85,21 @@ func RunReplication(ctx context.Context, commands chan commands.Command) {
 // with the incremental replication based on the oplog.
 func getReplState(ckpt checkpoint.Checkpoint) int {
 	// Check the replication state
-	log.Info("Checking replication state")
+	log.Info("checking replication state")
 
 	// We start with an unknown replication state
 	foundReplType := UnknownReplState
 
 	var lastLsnSync int64 = ckpt.LatestLSN
 	if lastLsnSync == 0 {
-		log.Info("No previous replication state found")
+		log.Info("no previous replication state found")
 		foundReplType = InitialReplState
 	} else {
 
 		// We need to chech if the last LSN synched on the target
 		// is included in the oplog of the source. Otherwise we need
 		// to perform a full replication.
-		log.Info("Last LSN synched: ", lastLsnSync)
+		log.Info("last LSN synched: ", lastLsnSync)
 		foundReplType = IncrementalReplState
 	}
 	return foundReplType

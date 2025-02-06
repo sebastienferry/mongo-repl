@@ -2,8 +2,7 @@
 
 ## Configuration source priority
 
-Some configuration values may be set via different means. In that case, the
-following general rule is applied:
+Some configuration values may be configured from different sources. In that case, the following general rule is applied:
 
 ```
 Cmd > Env > File

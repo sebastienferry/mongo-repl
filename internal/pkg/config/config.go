@@ -9,12 +9,6 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var configFileArg = flag.String("c", "", "configuration file path")
-
-func init() {
-	flag.Parse()
-}
-
 type FullReplConfig struct {
 	// The batch size for replication
 	BatchSize int `yaml:"batch"`
@@ -77,11 +71,15 @@ var Current *AppConfig = NewConfig()
 // LoadConfig loads the configuration from a file
 func (c *AppConfig) LoadConfig() error {
 
+	var configFileArg string
+	flag.StringVar(&configFileArg, "config", "config.yaml", "path to the configuration file")
+	flag.Parse()
+
 	// Fetch the environment variable
 	configFilePath := os.Getenv("CONFIG_FILE_PATH")
 	log.Info("configuration file path: ", configFilePath)
 	if configFilePath == "" {
-		configFilePath = *configFileArg
+		configFilePath = configFileArg
 	}
 
 	// Open the configuration file

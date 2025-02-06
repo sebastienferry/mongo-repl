@@ -1,12 +1,19 @@
 package config
 
 import (
+	"flag"
 	"os"
 	"regexp"
 
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
 	"gopkg.in/yaml.v2"
 )
+
+var configFileArg = flag.String("c", "", "configuration file path")
+
+func init() {
+	flag.Parse()
+}
 
 type FullReplConfig struct {
 	// The batch size for replication
@@ -28,9 +35,9 @@ type ReplConfig struct {
 	// The replication id
 	Id string `yaml:"id"`
 	// The address of the MongoDB server
-	Source string `json:"Source" yaml:"source"`
+	Source string `json:"source" yaml:"source"`
 	// The address of the MongoDB server
-	Target string `json:"Target" yaml:"target"`
+	Target string `json:"target" yaml:"target"`
 
 	// Features flags
 	Features        []string        `yaml:"features"`
@@ -72,12 +79,15 @@ func (c *AppConfig) LoadConfig() error {
 
 	// Fetch the environment variable
 	configFilePath := os.Getenv("CONFIG_FILE_PATH")
-	log.Debug("CONFIG_FILE_PATH: ", configFilePath)
+	log.Info("configuration file path: ", configFilePath)
+	if configFilePath == "" {
+		configFilePath = *configFileArg
+	}
 
 	// Open the configuration file
 	f, err := os.Open(configFilePath)
 	if err != nil {
-		log.Fatal("Error opening configuration file: ", err)
+		log.Fatal("error opening configuration file: ", err)
 	}
 	defer f.Close()
 
@@ -85,12 +95,12 @@ func (c *AppConfig) LoadConfig() error {
 	decoder := yaml.NewDecoder(f)
 	err = decoder.Decode(c)
 	if err != nil {
-		log.Fatal("Error decoding configuration file: ", err)
+		log.Fatal("error decoding configuration file: ", err)
 	}
 
 	// Override the log level if set in the environment
 	if os.Getenv("LOG_LEVEL") != "" {
-		c.Logging.Level = os.Getenv("LOG_LEVEL")
+		c.Logging.Level = os.Getenv("lOG_LEVEL")
 	}
 
 	// Ensure the ID is set

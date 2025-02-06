@@ -38,13 +38,27 @@ To solve this, the idea to deploy different ReplicaSet on datacenters/regions an
 
 ## Usage
 
+### Build
+
+```
+make build
+```
+
+### Run
+
 The tool fetch its configuration from a local `yaml` file. A sample if provided
 in the `/conf` directory. The env variable `CONFIG_FILE_PATH` is used to pass the
 path to the configuration file at start. See [config](./docs/config.md).
 
-Run from command-line:
+#### Run from source code
 
-Run container:
+```
+cd cmd/repl
+go run -c ../../conf/
+```
+
+
+#### Run container
 
 ```
 docker run -it --rm \

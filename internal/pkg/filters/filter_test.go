@@ -51,18 +51,25 @@ func TestShouldReplicateNamespace(t *testing.T) {
 		collection string
 		expected   bool
 	}{
+		// Explicitly allowed
 		{"db1", "coll1", true},
 		{"db1", "coll2", true},
-		{"db1", "coll3", false},
-		{"db1", "coll4", false},
 		{"db2", "coll1", true},
 		{"db2", "coll2", true},
+		// Explicitly denied
+		{"db1", "coll3", false},
 		{"db2", "coll3", false},
-		{"db2", "coll4", false},
+		// Unspecified with database allowed, should be true as a wild card
+		{"db1", "coll4", true},
+		{"db2", "coll4", true},
+		// Database denied, all collections should be denied
 		{"db3", "coll1", false},
 		{"db3", "coll2", false},
 		{"db3", "coll3", false},
 		{"db3", "coll4", false},
+		// Unspecifies database, should be false
+		{"db4", "coll1", false},
+		{"db4", "coll3", false},
 	}
 
 	for _, test := range tests {

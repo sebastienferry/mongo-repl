@@ -154,6 +154,7 @@ func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.Object
 }
 
 // Sync the documents to the target
+// deprecated
 func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (interfaces.BulkResult, error) {
 
 	var result interfaces.BulkResult = interfaces.BulkResult{}

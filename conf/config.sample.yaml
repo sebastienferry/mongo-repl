@@ -36,7 +36,7 @@ repl:
   full:
 
     # Batch size for replication
-    batch: 1000
+    batch: 10000
 
     # Option to try an update in case of duplicate key
     update_on_duplicate: false

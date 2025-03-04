@@ -136,7 +136,7 @@ func (w *OplogWriterSingle) RunWriter(ctx context.Context) {
 func (w *OplogWriterSingle) Insert(l *oplog.ChangeLog) error {
 
 	// DB Connection
-	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(l.Db).Collection(l.Collection)
 
 	// Insert the document
 	if _, err := collectionHandle.InsertOne(context.Background(), l.ParsedLog.Object); err != nil {
@@ -156,7 +156,7 @@ func (w *OplogWriterSingle) Insert(l *oplog.ChangeLog) error {
 func (w *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
-	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(l.Db).Collection(l.Collection)
 
 	var id interface{}
 	var update interface{} = bson.D{{"$set", l.ParsedLog.Object}}
@@ -217,7 +217,7 @@ func (w *OplogWriterSingle) Upsert(l *oplog.ChangeLog, upsert bool) error {
 func (w *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 
 	// DB Connection
-	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(l.Db).Collection(l.Collection)
 
 	var err error
 	var res *mongo.UpdateResult
@@ -283,7 +283,7 @@ func (w *OplogWriterSingle) Update(l *oplog.ChangeLog, upsert bool) error {
 }
 
 func (ow *OplogWriterSingle) Delete(l *oplog.ChangeLog) error {
-	collectionHandle := mdb.Registry.GetTarget().Client.Database(l.Db).Collection(l.Collection)
+	collectionHandle := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(l.Db).Collection(l.Collection)
 	_, err := collectionHandle.DeleteOne(context.Background(), l.ParsedLog.Object)
 	if err != nil {
 		log.ErrorWithFields(DeleteError, log.Fields{"err": err})
@@ -298,7 +298,7 @@ func (w *OplogWriterSingle) Command(l *oplog.ChangeLog) error {
 	if command, found := mdb.ExtraCommandName(l.ParsedLog.Object); found && filters.KeepOperation(command) {
 
 		var err error
-		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().Client); err == nil {
+		if err = RunCommand(l.Db, command, l, mdb.Registry.GetTarget().GetClient(context.TODO())); err == nil {
 			//log.InfoWithFields("execute cmd operation", log.Fields{"op": "c", "command": command})
 		} else if err.Error() == "ns not found" {
 			log.InfoWithFields("execute cmd operation, ignore error", log.Fields{"op": "c", "command": command})

@@ -71,7 +71,7 @@ func (r *DocumentReader) Replicate(ctx context.Context) error {
 	//filter = append(filter, bson.D{"_id", bson.D{{"$gt", r.lastId}}})
 
 	// Read the documents
-	db := r.Source.Client.Database(r.Database)
+	db := r.Source.GetClient(ctx).Database(r.Database)
 	cur, err := db.Collection(r.Collection).Find(ctx, filter, findOptions)
 	if err != nil {
 		return err

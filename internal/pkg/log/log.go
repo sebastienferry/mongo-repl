@@ -2,13 +2,34 @@ package log
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 
+	datadog "github.com/sebastienferry/logrus-datadog-hook"
 	"github.com/sirupsen/logrus"
 )
 
 var logger = logrus.New()
+
+func AddDataDogHook(endpoint string, apiKey string) {
+	ep := datadog.Endpoint(endpoint)
+	service := "mongo-repl"
+	host, _ := os.Hostname()
+	options := &datadog.Options{
+		ApiKey:          &apiKey,
+		DatadogEndpoint: &ep,
+		Service:         &service,
+		Host:            &host,
+	}
+	hook, err := datadog.New(options)
+	if err != nil {
+		panic(err.Error())
+	}
+	logger.AddHook(hook)
+	// This ensures that the logger exits gracefully and all buffered logs are sent before closing down
+	logrus.DeferExitHandler(hook.Close)
+}
 
 const (
 	PANIC = logrus.PanicLevel // 0

@@ -13,35 +13,45 @@ import (
 )
 
 type MDB struct {
-	// Keep the connection/client
-	Client *mongo.Client
+	Uri    string
+	client *mongo.Client
 }
 
 // NewMongo returns a new Mongo struct
-func NewMongo(connectUri string) *MDB {
+func NewMongo(uri string) *MDB {
+	return &MDB{
+		Uri:    uri,
+		client: nil,
+	}
+}
 
-	c, err := connect(context.TODO(), connectUri)
+func (mdb *MDB) GetClient(ctx context.Context) *mongo.Client {
+	if mdb.client != nil && mdb.isOk(ctx) {
+		return mdb.client
+	}
+	client, err := mdb.connect(ctx)
 	if err != nil {
 		log.Fatal("error connecting to the server: ", err)
 	}
+	log.Info("successfully connected to the server", config.ObfuscateCrendentials(mdb.Uri))
+	mdb.client = client
+	return mdb.client
+}
 
-	log.Info("successfully connected to the server", config.ObfuscateCrendentials(connectUri))
-
-	mongo := &MDB{
-		Client: c,
+func (conn *MDB) isOk(ctx context.Context) bool {
+	if err := conn.client.Ping(ctx, nil); err != nil {
+		return false
 	}
-
-	return mongo
+	return true
 }
 
 // Connect to the MongoDB server
-func connect(ctx context.Context, connectUri string) (*mongo.Client, error) {
+func (mdb *MDB) connect(ctx context.Context) (*mongo.Client, error) {
 
 	// Create a new client and connect to the source server
-	connectOpts := options.Client().ApplyURI(connectUri)
+	connectOpts := options.Client().ApplyURI(mdb.Uri)
 	client, err := mongo.Connect(ctx, connectOpts)
 	if err != nil {
-		log.Error("error connecting to the source server: ", err)
 		return nil, err
 	}
 	return client, nil

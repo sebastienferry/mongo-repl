@@ -18,7 +18,7 @@ var res struct {
 // Get statistics of a collection.
 // Deprecated: Use `GetDocumentCountByCollection` instead.
 func GetStatsByCollection(r *MDB, database, collection string) (int64, error) {
-	if err := r.Client.Database(database).RunCommand(nil,
+	if err := r.GetClient(context.TODO()).Database(database).RunCommand(nil,
 		bson.D{{"collStats", collection}}).Decode(&res); err != nil {
 		log.Error("error getting collection stats: ", err)
 		return 0, err
@@ -32,18 +32,17 @@ func GetStatsByCollection(r *MDB, database, collection string) (int64, error) {
 // The database and collection are passed as arguments.
 // This function replaces the deprecated `count` method.
 func GetDocumentCountByCollection(r *MDB, database, collection string) (int64, error) {
-	return r.Client.Database(database).Collection(collection).CountDocuments(context.Background(), bson.D{})
+	return r.GetClient(context.TODO()).Database(database).Collection(collection).CountDocuments(context.Background(), bson.D{})
 }
 
 // List the collections of a database
 func GetCollectionsByDb(ctx context.Context, db string, mongo *MDB) ([]string, error) {
 
 	// List the collections
-	collections, err := mongo.Client.Database(db).ListCollectionNames(ctx, bson.D{})
+	collections, err := mongo.GetClient(context.TODO()).Database(db).ListCollectionNames(ctx, bson.D{})
 	if err != nil {
 		return nil, err
 	}
-
 	return collections, nil
 }
 
@@ -64,7 +63,7 @@ func GetCollections(ctx context.Context, databases []string) (map[string][]strin
 // GetIndexesByDb returns the indexes of a collection
 func GetIndexesByDb(ctx context.Context, database string, collection string) ([]primitive.M, error) {
 	var indexes []primitive.M
-	cursor, err := Registry.GetSource().Client.Database(database).Collection(collection).Indexes().List(ctx)
+	cursor, err := Registry.GetSource().GetClient(ctx).Database(database).Collection(collection).Indexes().List(ctx)
 	if err != nil {
 		return nil, err
 	}

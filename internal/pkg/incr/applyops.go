@@ -1,6 +1,8 @@
 package incr
 
 import (
+	"context"
+
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/filters"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
@@ -103,7 +105,7 @@ func RunCommandApplyOps(database string, l *oplog.ChangeLog, client *mongo.Clien
 		}
 		store = append(store, ele)
 	}
-	singleResult := mdb.Registry.GetTarget().Client.Database(database).RunCommand(nil, store)
+	singleResult := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(database).RunCommand(nil, store)
 	raw, _ := singleResult.Raw()
 
 	var content bson.M

@@ -160,7 +160,7 @@ func (s *Snapshot) ReplicateIndexes(ctx context.Context, database string, collec
 			Options: opts,
 		}
 
-		coll := mdb.Registry.GetTarget().Client.Database(database).Collection(collection)
+		coll := mdb.Registry.GetTarget().GetClient(ctx).Database(database).Collection(collection)
 		newName, err := coll.Indexes().CreateOne(ctx, newIndex)
 		if err != nil {
 			log.Error("error creating the index: ", err)

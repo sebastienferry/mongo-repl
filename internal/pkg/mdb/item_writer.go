@@ -27,7 +27,7 @@ func NewMongoWriter(target *MDB, database string, collection string) *MongoItemW
 }
 
 func (s *MongoItemWriter) Insert(ctx context.Context, item *primitive.D) error {
-	_, err := s.Target.Client.Database(s.Database).Collection(s.Collection).InsertOne(ctx, item)
+	_, err := s.Target.GetClient(ctx).Database(s.Database).Collection(s.Collection).InsertOne(ctx, item)
 	return err
 }
 
@@ -54,7 +54,7 @@ func (w *MongoItemWriter) InsertMany(ctx context.Context, items []*bson.D) (inte
 }
 
 func (s *MongoItemWriter) Update(ctx context.Context, source *primitive.D, target *primitive.D) error {
-	_, err := s.Target.Client.Database(s.Database).Collection(s.Collection).ReplaceOne(ctx, source, target)
+	_, err := s.Target.GetClient(ctx).Database(s.Database).Collection(s.Collection).ReplaceOne(ctx, source, target)
 	return err
 }
 
@@ -99,12 +99,12 @@ func (w *MongoItemWriter) upsertManyInternal(ctx context.Context, items []*bson.
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	result, err := w.Target.Client.Database(w.Database).Collection(w.Collection).BulkWrite(ctx, models, opts)
+	result, err := w.Target.GetClient(ctx).Database(w.Database).Collection(w.Collection).BulkWrite(ctx, models, opts)
 	return result, err
 }
 
 func (s *MongoItemWriter) Delete(ctx context.Context, id primitive.ObjectID) error {
-	_, err := s.Target.Client.Database(s.Database).Collection(s.Collection).DeleteOne(ctx,
+	_, err := s.Target.GetClient(ctx).Database(s.Database).Collection(s.Collection).DeleteOne(ctx,
 		bson.D{{Key: "_id", Value: id}})
 	return err
 }
@@ -135,7 +135,7 @@ func (w *MongoItemWriter) DeleteMany(ctx context.Context, ids []primitive.Object
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	_, err := w.Target.Client.Database(w.Database).Collection(w.Collection).BulkWrite(nil, models, opts)
+	_, err := w.Target.GetClient(ctx).Database(w.Database).Collection(w.Collection).BulkWrite(nil, models, opts)
 
 	// All documents were successfully written
 	if err == nil {
@@ -180,7 +180,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (inter
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	_, err := Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
+	_, err := Registry.GetTarget().GetClient(context.TODO()).Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
 
 	// All documents were successfully written
 	if err == nil {
@@ -251,7 +251,7 @@ func (r *MongoItemWriter) WriteMany(ctx context.Context, items []*bson.D) (inter
 
 	if len(updateModels) != 0 {
 		opts := options.BulkWrite().SetOrdered(false)
-		_, err := Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
+		_, err := Registry.GetTarget().GetClient(ctx).Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
 		if err != nil {
 			result.ErrorCount = len(updateModels)
 			return result, err

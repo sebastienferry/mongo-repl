@@ -1,6 +1,8 @@
 package snapshot
 
 import (
+	"context"
+
 	"github.com/sebastienferry/mongo-repl/internal/pkg/config"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/interfaces"
 	"github.com/sebastienferry/mongo-repl/internal/pkg/log"
@@ -58,7 +60,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (interfaces.BulkResult
 
 	// Bulk write the documents
 	opts := options.BulkWrite().SetOrdered(false)
-	_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
+	_, err := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(r.Database).Collection(r.Collection).BulkWrite(nil, models, opts)
 
 	// All documents were successfully written
 	if err == nil {
@@ -131,7 +133,7 @@ func (r *DocumentWriter) WriteDocuments(docs []*bson.Raw) (interfaces.BulkResult
 
 	if len(updateModels) != 0 {
 		opts := options.BulkWrite().SetOrdered(false)
-		_, err := mdb.Registry.GetTarget().Client.Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
+		_, err := mdb.Registry.GetTarget().GetClient(context.TODO()).Database(r.Database).Collection(r.Collection).BulkWrite(nil, updateModels, opts)
 		if err != nil {
 			result.ErrorCount = len(updateModels)
 			return result, err

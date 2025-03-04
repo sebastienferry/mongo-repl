@@ -54,7 +54,9 @@ type ReplConfig struct {
 type AppConfig struct {
 	// Application logging configuration
 	Logging struct {
-		Level string `yaml:"level"`
+		Level    string `yaml:"level"`
+		Endpoint string `yaml:"endpoint"`
+		ApiKey   string `yaml:"apikey"`
 	} `yaml:"logging"`
 
 	// The replication configuration
@@ -136,6 +138,9 @@ func (c *AppConfig) LoadConfig() error {
 	for _, filter := range c.Repl.Filters["out"] {
 		c.Repl.FiltersOut[filter] = true
 	}
+
+	c.Logging.ApiKey = os.Getenv("LOG_API_KEY")
+	c.Logging.Endpoint = os.Getenv("LOG_ENDPOINT")
 
 	return nil
 }

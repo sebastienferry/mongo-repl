@@ -53,7 +53,7 @@ func NewMongoCheckpointService(name string, ckptDb string, ckptColl string) *Mon
 
 func (s *MongoCheckpoint) GetCheckpoint(ctx context.Context) (Checkpoint, error) {
 
-	db := mdb.Registry.GetTarget().Client.Database(s.DB)
+	db := mdb.Registry.GetTarget().GetClient(ctx).Database(s.DB)
 	collection := db.Collection(s.Collection)
 
 	filter := bson.M{}
@@ -118,7 +118,7 @@ func (s *MongoCheckpoint) saveCheckpoint(ctx context.Context) error {
 	filter := bson.M{"name": s.Current.Name}
 	update := bson.M{"$set": s.Current}
 
-	_, err := mdb.Registry.GetTarget().Client.Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
+	_, err := mdb.Registry.GetTarget().GetClient(ctx).Database(s.DB).Collection(s.Collection).UpdateOne(ctx, filter, update, opts)
 	if err != nil {
 		log.WarnWithFields("checkpoint upsert error", log.Fields{
 			"checkpoint": s.Current.Name,

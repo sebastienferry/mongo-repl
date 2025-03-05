@@ -143,7 +143,7 @@ func (r *OplogReader) RunReader(ctx context.Context) {
 
 		// Get the oplog cursor
 		filterOnTs := bson.D{{"ts", bson.D{{"$gt", r.latest}}}}
-		cur, err := mdb.Registry.GetSource().Client.Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, r.options)
+		cur, err := mdb.Registry.GetSource().GetClient(ctx).Database(checkpoint.OplogDatabase).Collection(checkpoint.OplogCollection).Find(nil, filterOnTs, r.options)
 		if err != nil {
 			log.Error("error getting oplog cursor: ", err)
 			time.Sleep(CursorWaitTime)

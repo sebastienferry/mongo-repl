@@ -1,6 +1,7 @@
 package checkpoint
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -41,7 +42,7 @@ func GetReplicasetOplogWindow() (TsWindow, error) {
 
 	// Get the most recent timestamp from the oplog
 	var newest primitive.Timestamp = MongoTimestampMin
-	newest, err := getOplogTimestamp(mdb.Registry.GetSource().Client, Newest)
+	newest, err := getOplogTimestamp(mdb.Registry.GetSource().GetClient(context.TODO()), Newest)
 	if err != nil {
 		return TsWindow{}, err
 	} else if IsZero(newest) {
@@ -49,7 +50,7 @@ func GetReplicasetOplogWindow() (TsWindow, error) {
 	}
 
 	var oldest primitive.Timestamp = MongoTimestampMin
-	oldest, err = getOplogTimestamp(mdb.Registry.GetSource().Client, Oldest)
+	oldest, err = getOplogTimestamp(mdb.Registry.GetSource().GetClient(context.TODO()), Oldest)
 	if err != nil {
 		return TsWindow{}, err
 	}

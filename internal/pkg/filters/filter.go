@@ -79,12 +79,11 @@ func ShouldReplicateNamespace(
 		return false
 	}
 
-	// By default, return false
-	return true
+	// By default, return true only if not specific collection is defined.
+	return len(collectionsIn) == 0
 }
 
 type Filter struct {
-	allowedOperations map[string]bool
 }
 
 func NewFilter() *Filter {

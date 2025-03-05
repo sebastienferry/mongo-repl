@@ -70,7 +70,7 @@ func (r *MongoItemReader) ReadItems(ctx context.Context, batchSize int,
 	}
 
 	// Read the documents
-	cur, err := r.Source.Client.Database(r.Database).Collection(r.Collection).Find(ctx, filter, findOptions)
+	cur, err := r.Source.GetClient(ctx).Database(r.Database).Collection(r.Collection).Find(ctx, filter, findOptions)
 	if err != nil {
 		return items, err
 	}

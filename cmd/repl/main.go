@@ -29,10 +29,15 @@ func main() {
 	// Logger initiatilization
 	level := log.FromString(config.Current.Logging.Level)
 	log.SetLogLevel(level)
-	log.SetLogFormatter(&logrus.TextFormatter{
-		FullTimestamp: false,
-		DisableColors: false,
-	})
+	if config.Current.Logging.ApiKey != "" {
+		log.SetLogFormatter(&logrus.JSONFormatter{})
+		log.AddDataDogHook(config.Current.Logging.Endpoint, config.Current.Logging.ApiKey)
+	} else {
+		log.SetLogFormatter(&logrus.TextFormatter{
+			FullTimestamp: false,
+			DisableColors: false,
+		})
+	}
 	log.Debug("starting mongo-repl")
 	log.Debug(fmt.Sprintf("log level: %d (%s)", level, config.Current.Logging.Level))
 

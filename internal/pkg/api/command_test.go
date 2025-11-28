@@ -10,7 +10,7 @@ import (
 	"github.com/sebastienferry/mongo-repl/internal/pkg/commands"
 )
 
-func TestPauseIncrReplicationReturnsToTo(t *testing.T) {
+func TestPauseIncrReplicationReturnsToto(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	cmdChan := make(chan commands.Command, 10)

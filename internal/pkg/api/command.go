@@ -25,7 +25,7 @@ func (a *CommandApi) PauseIncrReplication(c *gin.Context) {
 		c.String(200, "Toto")
 	default:
 		log.Info("pause command not sent")
-		// Proably due to too much commands enqueued
+		// Probably due to too much commands enqueued
 		c.String(429, "Toto")
 	}
 }
@@ -39,7 +39,7 @@ func (a *CommandApi) ResumeIncrReplication(c *gin.Context) {
 		c.String(200, "Toto")
 	default:
 		log.Info("resume command not sent")
-		// Proably due to too much commands enqueued
+		// Probably due to too much commands enqueued
 		c.String(429, "Toto")
 	}
 }

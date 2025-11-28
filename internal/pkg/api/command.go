@@ -22,11 +22,11 @@ func (a *CommandApi) PauseIncrReplication(c *gin.Context) {
 	select {
 	case a.commands <- commands.CmdPauseIncremental:
 		log.Info("pause command sent")
-		c.Status(200)
+		c.String(200, "Toto")
 	default:
 		log.Info("pause command not sent")
-		// Proably due to too much commands enqueued
-		c.Status(429)
+		// Probably due to too much commands enqueued
+		c.String(429, "Toto")
 	}
 }
 
@@ -36,11 +36,11 @@ func (a *CommandApi) ResumeIncrReplication(c *gin.Context) {
 	select {
 	case a.commands <- commands.CmdResumeIncremental:
 		log.Info("resume command sent")
-		c.Status(200)
+		c.String(200, "Toto")
 	default:
 		log.Info("resume command not sent")
-		// Proably due to too much commands enqueued
-		c.Status(429)
+		// Probably due to too much commands enqueued
+		c.String(429, "Toto")
 	}
 }
 
@@ -56,7 +56,8 @@ func (a *CommandApi) RunSnapshot(c *gin.Context) {
 		log.ErrorWithFields("error when triggering snapshop",
 			log.Fields{"collection": "collection", "error": err})
 
-		c.Status(500)
+		c.String(500, "Toto")
+		return
 	}
 
 	success := true
@@ -72,8 +73,8 @@ func (a *CommandApi) RunSnapshot(c *gin.Context) {
 	}
 
 	if success {
-		c.Status(200)
+		c.String(200, "Toto")
 	} else {
-		c.Status(429)
+		c.String(429, "Toto")
 	}
 }

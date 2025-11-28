@@ -37,4 +37,5 @@ conf/*.yaml
 
 # Ignore Go binary files
 __debug_bin*
-git merg
+repl
+bin/
